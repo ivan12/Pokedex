@@ -1,0 +1,247 @@
+@import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&family=Space+Grotesk:wght@400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+    margin: 0;
+    font-family: 'Nunito', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+code {
+    font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New', monospace;
+}
+
+@layer base {
+    :root {
+        /* Pokémon Brand Colors */
+        --background: 210 40% 98%;
+        --foreground: 222 47% 11%;
+        
+        /* Primary - Pokémon Red */
+        --primary: 0 85% 55%;
+        --primary-foreground: 0 0% 100%;
+        --primary-glow: 0 85% 65%;
+        
+        /* Secondary - Electric Yellow */
+        --secondary: 48 100% 50%;
+        --secondary-foreground: 222 47% 11%;
+        
+        /* Accent - Pokéball Blue */
+        --accent: 210 100% 50%;
+        --accent-foreground: 0 0% 100%;
+        
+        /* Card and UI Elements */
+        --card: 0 0% 100%;
+        --card-foreground: 222 47% 11%;
+        --popover: 0 0% 100%;
+        --popover-foreground: 222 47% 11%;
+        
+        /* Muted colors */
+        --muted: 210 40% 96%;
+        --muted-foreground: 215 16% 47%;
+        
+        /* States */
+        --destructive: 0 84% 60%;
+        --destructive-foreground: 0 0% 98%;
+        --success: 142 76% 36%;
+        --success-foreground: 0 0% 100%;
+        
+        /* Borders and inputs */
+        --border: 214 32% 91%;
+        --input: 214 32% 91%;
+        --ring: 210 100% 50%;
+        --radius: 0.75rem;
+        
+        /* Pokémon Type Colors - HSL Format */
+        --type-normal: 30 20% 65%;
+        --type-fire: 25 85% 55%;
+        --type-water: 211 85% 55%;
+        --type-electric: 48 100% 50%;
+        --type-grass: 120 45% 45%;
+        --type-ice: 180 55% 70%;
+        --type-fighting: 350 75% 45%;
+        --type-poison: 300 55% 50%;
+        --type-ground: 35 60% 45%;
+        --type-flying: 210 70% 70%;
+        --type-psychic: 320 60% 60%;
+        --type-bug: 65 55% 45%;
+        --type-rock: 40 35% 45%;
+        --type-ghost: 270 40% 50%;
+        --type-dragon: 270 80% 50%;
+        --type-dark: 0 0% 25%;
+        --type-steel: 210 15% 55%;
+        --type-fairy: 330 70% 75%;
+        
+        /* Gradients */
+        --gradient-primary: linear-gradient(135deg, hsl(0 85% 55%), hsl(0 85% 65%));
+        --gradient-pokeball: linear-gradient(180deg, hsl(0 85% 55%) 0%, hsl(0 85% 55%) 50%, hsl(0 0% 100%) 50%, hsl(0 0% 100%) 100%);
+        --gradient-hero: linear-gradient(135deg, hsl(210 100% 50% / 0.1), hsl(48 100% 50% / 0.05));
+        --gradient-card: linear-gradient(135deg, hsl(0 0% 100%), hsl(210 40% 98%));
+        
+        /* Shadows */
+        --shadow-sm: 0 1px 3px 0 hsl(222 47% 11% / 0.1);
+        --shadow-md: 0 4px 12px 0 hsl(222 47% 11% / 0.1);
+        --shadow-lg: 0 10px 30px -5px hsl(222 47% 11% / 0.15);
+        --shadow-glow: 0 0 20px hsl(210 100% 50% / 0.3);
+        --shadow-glow-primary: 0 0 30px hsl(0 85% 55% / 0.4);
+        
+        /* Animations */
+        --transition-smooth: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        --transition-bounce: 0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+    }
+    
+    .dark {
+        --background: 222 47% 11%;
+        --foreground: 210 40% 98%;
+        
+        --primary: 0 85% 60%;
+        --primary-foreground: 0 0% 100%;
+        
+        --secondary: 48 100% 55%;
+        --secondary-foreground: 222 47% 11%;
+        
+        --accent: 210 100% 55%;
+        --accent-foreground: 0 0% 100%;
+        
+        --card: 222 47% 15%;
+        --card-foreground: 210 40% 98%;
+        --popover: 222 47% 15%;
+        --popover-foreground: 210 40% 98%;
+        
+        --muted: 217 33% 17%;
+        --muted-foreground: 215 20% 65%;
+        
+        --destructive: 0 62% 30%;
+        --destructive-foreground: 0 0% 98%;
+        
+        --border: 217 33% 17%;
+        --input: 217 33% 17%;
+        --ring: 210 100% 55%;
+    }
+}
+
+@layer base {
+    * {
+        @apply border-border;
+    }
+    body {
+        @apply bg-background text-foreground;
+    }
+    
+    h1, h2, h3, h4, h5, h6 {
+        font-family: 'Space Grotesk', sans-serif;
+    }
+}
+
+@layer components {
+    .pokemon-card {
+        @apply relative overflow-hidden rounded-2xl bg-card transition-all duration-300;
+        @apply hover:scale-105 hover:shadow-lg cursor-pointer;
+    }
+    
+    .type-badge {
+        @apply inline-flex items-center justify-center px-3 py-1 rounded-full text-xs font-semibold text-white;
+        @apply transition-all duration-200;
+    }
+    
+    .stat-bar {
+        @apply relative h-2 bg-muted rounded-full overflow-hidden;
+    }
+    
+    .stat-fill {
+        @apply absolute left-0 top-0 h-full rounded-full transition-all duration-500;
+        background: linear-gradient(90deg, hsl(var(--accent)), hsl(var(--primary)));
+    }
+    
+    .pokeball-bg {
+        @apply absolute opacity-5 pointer-events-none;
+    }
+}
+
+@layer utilities {
+    .animate-float {
+        animation: float 3s ease-in-out infinite;
+    }
+    
+    @keyframes float {
+        0%, 100% {
+            transform: translateY(0);
+        }
+        50% {
+            transform: translateY(-10px);
+        }
+    }
+    
+    .animate-slide-up {
+        animation: slideUp 0.5s ease-out;
+    }
+    
+    @keyframes slideUp {
+        from {
+            opacity: 0;
+            transform: translateY(20px);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+    
+    .animate-scale-in {
+        animation: scaleIn 0.3s ease-out;
+    }
+    
+    @keyframes scaleIn {
+        from {
+            opacity: 0;
+            transform: scale(0.9);
+        }
+        to {
+            opacity: 1;
+            transform: scale(1);
+        }
+    }
+    
+    .text-gradient {
+        background: linear-gradient(135deg, hsl(var(--primary)), hsl(var(--accent)));
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+    }
+}
+
+@layer base {
+    [data-debug-wrapper="true"] {
+        display: contents !important;
+    }
+
+    [data-debug-wrapper="true"] > * {
+        margin-left: inherit;
+        margin-right: inherit;
+        margin-top: inherit;
+        margin-bottom: inherit;
+        padding-left: inherit;
+        padding-right: inherit;
+        padding-top: inherit;
+        padding-bottom: inherit;
+        column-gap: inherit;
+        row-gap: inherit;
+        gap: inherit;
+        border-left-width: inherit;
+        border-right-width: inherit;
+        border-top-width: inherit;
+        border-bottom-width: inherit;
+        border-left-style: inherit;
+        border-right-style: inherit;
+        border-top-style: inherit;
+        border-bottom-style: inherit;
+        border-left-color: inherit;
+        border-right-color: inherit;
+        border-top-color: inherit;
+        border-bottom-color: inherit;
+    }
+}
