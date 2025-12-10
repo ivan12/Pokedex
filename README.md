@@ -2,6 +2,13 @@
 
 Modern Pokédex built with React + Vite + Tailwind, featuring rich filters, battle simulation, Firebase caching, and local favorites.
 
+## Web
+<img width="1903" height="875" alt="image" src="https://github.com/user-attachments/assets/e9ff1b6b-ba0a-4f09-9c02-e26fbe0449f8" />
+
+## Mobile
+<img width="383" height="851" alt="image" src="https://github.com/user-attachments/assets/7846f545-4420-44a4-b1f8-6e92ca9b03e1" />
+
+
 ## Features
 - 🔍 Search by name, number, type, or image (upload) across all generations (1–9).
 - 🎚️ Filters for Pokémon types and generations with colorful badges per generation.
