@@ -43,14 +43,18 @@ export const Header = () => {
       <div className="container mx-auto px-4">
         <div className="flex items-center justify-between h-16">
           {/* Logo */}
-          <a href="/" className="flex items-center gap-3 group">
+          <button
+            type="button"
+            onClick={() => navigate('/')}
+            className="flex items-center gap-3 group"
+          >
             <div className="relative w-10 h-10">
               <div className="absolute inset-0 bg-primary rounded-full"></div>
               <div className="absolute inset-0 bg-card rounded-full top-0 left-0 right-0 bottom-1/2 border-2 border-foreground"></div>
               <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-3 h-3 bg-card rounded-full border-2 border-foreground"></div>
             </div>
             <span className="text-2xl font-bold text-gradient">{'Pok\u00e9dex'}</span>
-          </a>
+          </button>
           
           {/* Desktop Navigation */}
           <nav className="hidden md:flex items-center gap-6">

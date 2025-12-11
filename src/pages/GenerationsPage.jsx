@@ -9,7 +9,10 @@ const GENERATIONS = [
   { id: 3, name: 'Generation III', region: 'Hoenn', start: 252, end: 386, color: 'hsl(211 85% 55%)' },
   { id: 4, name: 'Generation IV', region: 'Sinnoh', start: 387, end: 493, color: 'hsl(120 45% 45%)' },
   { id: 5, name: 'Generation V', region: 'Unova', start: 494, end: 649, color: 'hsl(300 55% 50%)' },
-  { id: 6, name: 'Generation VI', region: 'Kalos', start: 650, end: 721, color: 'hsl(330 70% 75%)' }
+  { id: 6, name: 'Generation VI', region: 'Kalos', start: 650, end: 721, color: 'hsl(330 70% 75%)' },
+  { id: 7, name: 'Generation VII', region: 'Alola', start: 722, end: 809, color: 'hsl(180 70% 50%)' },
+  { id: 8, name: 'Generation VIII', region: 'Galar', start: 810, end: 905, color: 'hsl(270 65% 55%)' },
+  { id: 9, name: 'Generation IX', region: 'Paldea', start: 906, end: 1025, color: 'hsl(24 80% 55%)' }
 ];
 
 const GenerationsPage = () => {
@@ -55,10 +58,10 @@ const GenerationsPage = () => {
       <div className="container mx-auto px-4 py-8">
         <div className="max-w-6xl mx-auto">
           <h1 className="text-4xl md:text-5xl font-bold text-center mb-3 text-gradient">
-            Pokémon Generations
+            Pokemon Generations
           </h1>
           <p className="text-center text-muted-foreground mb-8">
-            Browse Pokémon by generation and region
+            Browse Pokemon by generation and region
           </p>
           
           {/* Generation Selector */}
@@ -90,7 +93,7 @@ const GenerationsPage = () => {
                 #{currentGen.start} - #{currentGen.end}
               </Badge>
               <Badge variant="secondary" className="text-base">
-                {currentGen.end - currentGen.start + 1} Pokémon
+                {currentGen.end - currentGen.start + 1} Pokemon
               </Badge>
             </div>
           </div>
@@ -116,4 +119,3 @@ const GenerationsPage = () => {
 };
 
 export default GenerationsPage;
-

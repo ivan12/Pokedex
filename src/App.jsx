@@ -10,7 +10,7 @@ import FavoritesPage from '@/pages/FavoritesPage';
 function App() {
   return (
     <div className="App">
-      <BrowserRouter>
+      <BrowserRouter basename="/pokedex">
         <Routes>
           <Route path="/" element={<HomePage />} />
           <Route path="/pokemon/:id" element={<PokemonDetailPage />} />
