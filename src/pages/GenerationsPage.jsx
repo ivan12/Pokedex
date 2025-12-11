@@ -57,37 +57,28 @@ const GenerationsPage = () => {
       
       <div className="container mx-auto px-4 py-8">
         <div className="max-w-6xl mx-auto">
-          <h1 className="text-4xl md:text-5xl font-bold text-center mb-3 text-gradient">
-            Pokemon Generations
-          </h1>
+          <h1 className="text-4xl md:text-5xl font-bold text-center mb-3 text-gradient">Regions</h1>
           <p className="text-center text-muted-foreground mb-8">
-            Browse Pokemon by generation and region
+            Browse Pokemon by region
           </p>
           
           {/* Generation Selector */}
-          <div className="flex flex-wrap justify-center gap-3 mb-8">
-            {GENERATIONS.map((gen) => (
-              <button
-                key={gen.id}
-                onClick={() => setSelectedGen(gen.id)}
-                className={`px-6 py-3 rounded-xl font-semibold transition-all hover:scale-105 ${
-                  selectedGen === gen.id
-                    ? 'shadow-lg'
-                    : 'bg-muted hover:bg-muted/80'
-                }`}
-                style={{
-                  backgroundColor: selectedGen === gen.id ? gen.color : undefined,
-                  color: selectedGen === gen.id ? 'white' : undefined
-                }}
-              >
-                {gen.name}
-              </button>
-            ))}
+          <div className="flex justify-center mb-8">
+            <select
+              value={selectedGen}
+              onChange={(e) => setSelectedGen(Number(e.target.value))}
+              className="border rounded-xl px-4 py-3 bg-background shadow-sm text-sm md:text-base min-w-[240px]"
+            >
+              {GENERATIONS.map((gen) => (
+                <option key={gen.id} value={gen.id}>
+                  {gen.region}
+                </option>
+              ))}
+            </select>
           </div>
           
           {/* Current Generation Info */}
           <div className="text-center mb-8">
-            <h2 className="text-3xl font-bold mb-2">{currentGen.region}</h2>
             <div className="flex items-center justify-center gap-4 text-muted-foreground">
               <Badge variant="secondary" className="text-base">
                 #{currentGen.start} - #{currentGen.end}

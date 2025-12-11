@@ -1,6 +1,6 @@
 export const HeroSection = () => {
   return (
-    <section className="relative overflow-hidden py-12 md:py-16">
+    <section className="relative overflow-hidden py-12 md:py-16 hidden sm:block">
       {/* Background Gradient */}
       <div className="absolute inset-0 bg-gradient-to-br from-accent/10 via-primary/5 to-secondary/10"></div>
       

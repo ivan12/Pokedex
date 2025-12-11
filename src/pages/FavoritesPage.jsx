@@ -26,7 +26,9 @@ const FavoritesPage = () => {
           <div className="flex items-center justify-between mb-8">
             <div>
               <h1 className="text-4xl md:text-5xl font-bold text-gradient">Favorites</h1>
-              <p className="text-muted-foreground">Your saved Pokémon are stored locally in your browser.</p>
+              <p className="text-muted-foreground">
+                Your saved Pokemon stay in your browser, and if you’re logged in, they’re also synced to your account.
+              </p>
             </div>
           </div>
 
@@ -56,4 +58,3 @@ const FavoritesPage = () => {
 };
 
 export default FavoritesPage;
-

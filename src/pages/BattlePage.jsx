@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Header from '@/components/Header';
+import PokemonCard from '@/components/PokemonCard';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -51,9 +52,7 @@ const BattlePage = () => {
   const [selectedRight, setSelectedRight] = useState(null);
   const [battleResult, setBattleResult] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [battling, setBattling] = useState(false);
   const [startMode, setStartMode] = useState('speed'); // speed | left | right | random
-  const [weather, setWeather] = useState('clear'); // clear | sun | rain | snow | sandstorm
   const [battleMode, setBattleMode] = useState('pve'); // pve | pvp
   const { user, authLoading, loginWithGoogle } = useAuth();
   const [showLoginGate, setShowLoginGate] = useState(false);
@@ -68,6 +67,15 @@ const BattlePage = () => {
   const [pvpFiltered, setPvpFiltered] = useState([]);
   const [selectedMove, setSelectedMove] = useState(null);
   const [showRematchModal, setShowRematchModal] = useState(false);
+  const [pveBattle, setPveBattle] = useState(null);
+  const [pveLocked, setPveLocked] = useState(false);
+  const pveTimersRef = useRef([]);
+  const resetPveBattle = useCallback(() => {
+    setPveLocked(false);
+    setPveBattle(null);
+    pveTimersRef.current.forEach(clearTimeout);
+    pveTimersRef.current = [];
+  }, []);
   const endNotifiedRef = useRef(false);
   const presenceStatus = useMemo(() => {
     if (activeRoomId) return 'battle';
@@ -236,7 +244,7 @@ const BattlePage = () => {
       if (ended || missingUser) {
         if (!endNotifiedRef.current) {
           endNotifiedRef.current = true;
-          toast.message('Sala encerrada. Volte a procurar um adversario.');
+      toast.message('Room closed. Look for another opponent.');
         }
         resetSessionState();
         cleanupRoomIfEmpty(activeRoomId);
@@ -264,13 +272,49 @@ const BattlePage = () => {
   useEffect(() => {
     if (battleMode === 'pvp') {
       setBattleResult(null);
-      setBattling(false);
       setSelectedLeft(null);
       setSelectedRight(null);
+      resetPveBattle();
     }
-  }, [battleMode]);
+  }, [battleMode, resetPveBattle]);
 
-  const baseHP = (p) => p?.stats?.find((s) => s.stat.name === 'hp')?.base_stat ?? 80;
+  const DEFAULT_LEVEL = 100;
+  const DEFAULT_IV = 31;
+  const DEFAULT_EV = 0;
+
+  const computeBattleStats = (p) => {
+    const level = p?.level ?? DEFAULT_LEVEL;
+    const ivs = p?.ivs ?? {};
+    const evs = p?.evs ?? {};
+    const nature = p?.nature ?? {};
+    const boost = nature.boost ?? null;
+    const lower = nature.lower ?? null;
+
+    const base = (key, fallback = 0) => p?.stats?.find((s) => s.stat.name === key)?.base_stat ?? fallback;
+    const iv = (key) => (typeof ivs[key] === 'number' ? ivs[key] : DEFAULT_IV);
+    const ev = (key) => (typeof evs[key] === 'number' ? evs[key] : DEFAULT_EV);
+    const natureMult = (key) => (boost === key ? 1.1 : lower === key ? 0.9 : 1);
+
+    const calcStat = (key, isHp = false) => {
+      const baseVal = base(key, isHp ? 80 : 60);
+      if (isHp) {
+        return Math.floor(((2 * baseVal + iv(key) + Math.floor(ev(key) / 4)) * level) / 100) + level + 10;
+      }
+      const raw = Math.floor(((2 * baseVal + iv(key) + Math.floor(ev(key) / 4)) * level) / 100) + 5;
+      return Math.floor(raw * natureMult(key));
+    };
+
+    return {
+      hp: calcStat('hp', true),
+      attack: calcStat('attack'),
+      defense: calcStat('defense'),
+      'special-attack': calcStat('special-attack'),
+      'special-defense': calcStat('special-defense'),
+      speed: calcStat('speed'),
+    };
+  };
+
+  const baseHP = (p) => computeBattleStats(p).hp;
 
   const serializePokemon = (p) => ({
     id: p.id,
@@ -295,6 +339,19 @@ const BattlePage = () => {
       .map((s) => s.charAt(0).toUpperCase() + s.slice(1))
       .join(' ');
 
+  const formatPokemonName = (name) => {
+    if (!name) return 'Pokemon';
+    return name.charAt(0).toUpperCase() + name.slice(1);
+  };
+
+  const estimateLevel = (p) => {
+    if (!p?.stats) return 50;
+    const hpStat = p.stats.find((s) => s.stat.name === 'hp')?.base_stat ?? 60;
+    const atkStat = p.stats.find((s) => s.stat.name === 'attack')?.base_stat ?? 60;
+    const defStat = p.stats.find((s) => s.stat.name === 'defense')?.base_stat ?? 60;
+    return Math.min(100, Math.max(20, Math.round((hpStat + atkStat + defStat) / 3)));
+  };
+
   const getPokemonMoves = (p) => {
     const rawMoves = p?.moves ?? p?.pokemon?.moves ?? [];
     const atk = p?.stats?.find((s) => s.stat.name === 'attack')?.base_stat ?? 60;
@@ -312,6 +369,20 @@ const BattlePage = () => {
       power: basePower + idx * 10,
       icon: icons[idx % icons.length],
     }));
+  };
+
+  const decideFirstTurn = useCallback(() => {
+    if (!selectedLeft || !selectedRight) return 'left';
+    const speed1 = computeBattleStats(selectedLeft).speed ?? 50;
+    const speed2 = computeBattleStats(selectedRight).speed ?? 50;
+    if (startMode === 'speed') return speed1 >= speed2 ? 'left' : 'right';
+    if (startMode === 'right') return 'right';
+    if (startMode === 'random') return Math.random() < 0.5 ? 'left' : 'right';
+    return 'left';
+  }, [selectedLeft, selectedRight, startMode]);
+
+  const pushPveTimer = (id) => {
+    pveTimersRef.current.push(id);
   };
 
   const opponentId = useMemo(() => {
@@ -334,6 +405,7 @@ const BattlePage = () => {
 
   const selfPlayer = room?.players?.[user?.uid] ?? null;
   const opponentPlayer = opponentId ? room?.players?.[opponentId] ?? null : null;
+  const bothPlayersInRoom = Boolean(selfPlayer && opponentPlayer);
   const isMyTurn = room?.currentTurn === user?.uid;
   const matchFinished = room?.state === 'finished';
   const pendingInvites = incomingInvites.filter((inv) => inv.status === 'pending');
@@ -343,8 +415,8 @@ const BattlePage = () => {
   const myRematchPending =
     rematchRequest && rematchRequest.status === 'pending' && rematchRequest.fromUid === user?.uid;
   const isInRoom = Boolean(room?.players?.[user?.uid]);
-  const selfName = selfPlayer?.name ?? user?.displayName ?? 'Voce';
-  const opponentName = opponentPlayer?.name ?? 'Adversario';
+  const selfName = selfPlayer?.name ?? user?.displayName ?? 'You';
+  const opponentName = opponentPlayer?.name ?? 'Opponent';
   const [nowTs, setNowTs] = useState(Date.now());
   const decliningRef = useRef(new Set());
   const [showLog, setShowLog] = useState(false);
@@ -361,6 +433,11 @@ const BattlePage = () => {
     return () => clearInterval(timer);
   }, []);
 
+  useEffect(() => () => {
+    pveTimersRef.current.forEach(clearTimeout);
+    pveTimersRef.current = [];
+  }, []);
+
   // Auto-decline expired invites (60s)
   useEffect(() => {
     pendingInvites.forEach((invite) => {
@@ -374,16 +451,39 @@ const BattlePage = () => {
       }
     });
   }, [pendingInvites, nowTs]);
+
+  useEffect(() => {
+    if (!pveBattle?.winner) return;
+    if (!selectedLeft || !selectedRight) return;
+    const winnerPokemon = pveBattle.winner === 'left' ? selectedLeft : selectedRight;
+    const loserPokemon = pveBattle.winner === 'left' ? selectedRight : selectedLeft;
+    const winnerHP = pveBattle.winner === 'left' ? pveBattle.hpLeft : pveBattle.hpRight;
+    const winnerMaxHP = pveBattle.winner === 'left' ? pveBattle.maxLeft : pveBattle.maxRight;
+    setBattleResult({
+      winner: winnerPokemon,
+      loser: loserPokemon,
+      turns: pveBattle.log?.length ?? 0,
+      winnerHP,
+      winnerMaxHP,
+      battleLog: pveBattle.log ?? [],
+    });
+  }, [pveBattle, selectedLeft, selectedRight]);
   const selectLeft = (p) => {
+    resetPveBattle();
     setSelectedLeft(p);
     setSearchLeft('');
     setFilteredLeft([]);
   };
 
   const selectRight = (p) => {
+    resetPveBattle();
     setSelectedRight(p);
     setSearchRight('');
     setFilteredRight([]);
+  };
+
+  const toggleStarter = (side) => {
+    setStartMode((prev) => (prev === side ? 'speed' : side));
   };
 
   const getTypeEffect = (attackType, defenderTypes) => {
@@ -398,7 +498,7 @@ const BattlePage = () => {
         mult *= 0.5;
       }
     });
-    const weatherCfg = WEATHER_BONUS[weather] || {};
+    const weatherCfg = WEATHER_BONUS.clear;
     const weatherMult = weatherCfg.boost?.includes(attackType) ? 1.2 : weatherCfg.nerf?.includes(attackType) ? 0.8 : 1;
     return { baseMult: mult, weatherMult };
   };
@@ -422,9 +522,11 @@ const BattlePage = () => {
       }
     });
 
-    const atk = attacker.stats.find((s) => s.stat.name === 'attack')?.base_stat ?? 50;
-    const def = defender.stats.find((s) => s.stat.name === 'defense')?.base_stat ?? 50;
-    const spd = attacker.stats.find((s) => s.stat.name === 'speed')?.base_stat ?? 50;
+    const attackerStats = computeBattleStats(attacker);
+    const defenderStats = computeBattleStats(defender);
+    const atk = attackerStats.attack ?? 50;
+    const def = defenderStats.defense ?? 50;
+    const spd = attackerStats.speed ?? 50;
     const base = Math.max(10, Math.floor((atk / Math.max(def, 1)) * 20));
     const speedBonus = Math.floor(spd / 20);
     const randomFactor = Math.random() * 0.3 + 0.85;
@@ -437,7 +539,7 @@ const BattlePage = () => {
       await runTransaction(ref(db, `rooms/${roomId}`), (current) => {
         if (!current || current.state !== 'selecting') return current;
         const ids = Object.keys(current.players || {});
-        const ready = ids.every((pid) => current.players[pid]?.pokemon);
+        const ready = ids.every((pid) => current.players[pid]?.pokemon && current.players[pid]?.ready);
         if (!ready || current.currentTurn) return current;
         const first = ids[Math.floor(Math.random() * ids.length)];
         return { ...current, state: 'in-progress', currentTurn: first, log: current.log ?? [] };
@@ -453,7 +555,13 @@ const BattlePage = () => {
       pokemon: serializePokemon(p),
       hp,
       maxHp: hp,
+      ready: false,
     });
+  };
+
+  const markReadyForRoom = async () => {
+    if (!room || !user) return;
+    await update(ref(db, `rooms/${room.id}/players/${user.uid}`), { ready: true });
     await maybeStartRoom(room.id);
   };
 
@@ -511,7 +619,7 @@ const BattlePage = () => {
     try {
       const inviteRef = push(ref(db, `invites/${player.uid}`));
       if (player.status === 'battle') {
-        toast.error('Jogador ja esta em batalha.');
+        toast.error('Player is already in a battle.');
         return;
       }
       const payload = {
@@ -527,14 +635,14 @@ const BattlePage = () => {
         const data = snap.val();
         if (!data) return;
         if (data.status === 'accepted' && data.roomId) {
-          toast.success(`${player.name ?? 'Jogador'} aceitou o convite!`);
+          toast.success(`${player.name ?? 'Player'} accepted the invite!`);
           setActiveRoomId(data.roomId);
           setShowPlayersModal(false);
           inviteWatcher?.();
           setInviteWatcher(null);
         }
         if (data.status === 'declined') {
-          toast.error(`${player.name ?? 'Jogador'} recusou o convite.`);
+          toast.error(`${player.name ?? 'Player'} declined the invite.`);
           inviteWatcher?.();
           setInviteWatcher(null);
           setOutgoingInvite(null);
@@ -579,7 +687,7 @@ const BattlePage = () => {
         roomId: roomRef.key,
       });
       setActiveRoomId(roomRef.key);
-      toast.success('Convite aceito! Iniciando sala...');
+      toast.success('Invite accepted! Starting room...');
     } catch (err) {
       console.error('Error accepting invite', err);
       toast.error('Nao foi possivel aceitar o convite.');
@@ -639,6 +747,7 @@ const BattlePage = () => {
       updates[`players/${pid}/pokemon`] = null;
       updates[`players/${pid}/hp`] = null;
       updates[`players/${pid}/maxHp`] = null;
+       updates[`players/${pid}/ready`] = false;
     });
     await update(ref(db, `rooms/${room.id}`), updates);
   };
@@ -646,7 +755,7 @@ const BattlePage = () => {
   const requestRematch = async () => {
     if (!room || !user) return;
     if (room.rematchRequest?.status === 'pending') {
-      toast.message('Aguardando o adversario responder.');
+      toast.message('Waiting for the opponent to respond.');
       return;
     }
     await update(ref(db, `rooms/${room.id}`), {
@@ -672,75 +781,133 @@ const BattlePage = () => {
     await leaveRoom();
   };
 
-  const simulateBattle = () => {
+  const resolvePveTurn = useCallback(
+    (attackerSide, move) => {
+      if (!selectedLeft || !selectedRight) return;
+      if (!pveBattle?.active || pveBattle?.winner) return;
+      if (pveBattle.turn && pveBattle.turn !== attackerSide) return;
+      if (pveLocked) return;
+
+      const attacker = attackerSide === 'left' ? selectedLeft : selectedRight;
+      const defender = attackerSide === 'left' ? selectedRight : selectedLeft;
+      const defenderSide = attackerSide === 'left' ? 'right' : 'left';
+      const moveName = move?.name ?? 'Ataque';
+      const dmgPack = calcDamage(attacker, defender);
+      const movePower = move?.power ?? 70;
+      const scaledDamage = Math.max(5, Math.round(dmgPack.damage * (movePower / 80)));
+
+      setPveLocked(true);
+      setPveBattle((prev) => {
+        if (!prev?.active) return prev;
+        const currentTargetHP = defenderSide === 'left' ? prev.hpLeft : prev.hpRight;
+        const nextHP = Math.max(0, currentTargetHP - scaledDamage);
+        const logEntry = {
+          turn: (prev.log?.length ?? 0) + 1,
+          attacker: attacker.name,
+          defender: defender.name,
+          moveName,
+          movePower,
+          damage: scaledDamage,
+          remainingHP: nextHP,
+          attackType: dmgPack.attackType,
+          totalMult: dmgPack.totalMult,
+        };
+        const next = {
+          ...prev,
+          message: `${formatPokemonName(attacker.name)} used ${moveName}!`,
+          anim: {
+            ...(prev.anim || {}),
+            [attackerSide]: 'attack',
+            [defenderSide]: 'hit',
+          },
+          log: [...(prev.log ?? []), logEntry].slice(-8),
+          lastMove: logEntry,
+        };
+        if (defenderSide === 'left') {
+          next.hpLeft = nextHP;
+        } else {
+          next.hpRight = nextHP;
+        }
+        if (nextHP <= 0) {
+          next.winner = attackerSide;
+          next.turn = null;
+          next.active = false;
+          next.message = `${formatPokemonName(attacker.name)} won!`;
+        } else {
+          next.turn = defenderSide;
+        }
+        return next;
+      });
+
+      pushPveTimer(
+        setTimeout(() => {
+          setPveBattle((prev) => {
+            if (!prev) return prev;
+            return {
+              ...prev,
+              anim: { ...(prev.anim || {}), [attackerSide]: '', [defenderSide]: '' },
+            };
+          });
+          setPveLocked(false);
+        }, 550)
+      );
+    },
+    [selectedLeft, selectedRight, pveBattle, pveLocked]
+  );
+
+  useEffect(() => {
+    if (battleMode !== 'pve') return;
+    if (!pveBattle?.active || pveBattle?.winner || pveLocked) return;
+    if (!pveBattle.turn) return;
+    const attackerSide = pveBattle.turn;
+    const attacker = attackerSide === 'left' ? selectedLeft : selectedRight;
+    if (!attacker) return;
+    const moves = getPokemonMoves(attacker);
+    const move = moves[Math.floor(Math.random() * moves.length)];
+    const timerId = setTimeout(() => resolvePveTurn(attackerSide, move), 3000);
+    pushPveTimer(timerId);
+    return () => clearTimeout(timerId);
+  }, [battleMode, pveBattle?.active, pveBattle?.winner, pveBattle?.turn, pveLocked, selectedLeft, selectedRight, resolvePveTurn]);
+
+  const startPveBattle = () => {
     if (!selectedLeft || !selectedRight) {
-      toast.error('Select two Pokemon to battle!');
+      toast.error('Select two Pokemon to start the battle.');
       return;
     }
-
-    setBattling(true);
+    resetPveBattle();
     setBattleResult(null);
-
-    setTimeout(() => {
-      let hp1 = selectedLeft.stats.find((s) => s.stat.name === 'hp')?.base_stat ?? 80;
-      let hp2 = selectedRight.stats.find((s) => s.stat.name === 'hp')?.base_stat ?? 80;
-      const maxHP1 = hp1;
-      const maxHP2 = hp2;
-      const speed1 = selectedLeft.stats.find((s) => s.stat.name === 'speed')?.base_stat ?? 50;
-      const speed2 = selectedRight.stats.find((s) => s.stat.name === 'speed')?.base_stat ?? 50;
-      let first = 'left';
-      if (startMode === 'speed') {
-        first = speed1 >= speed2 ? 'left' : 'right';
-      } else if (startMode === 'right') {
-        first = 'right';
-      } else if (startMode === 'random') {
-        first = Math.random() < 0.5 ? 'left' : 'right';
-      }
-      const log = [];
-      let turns = 0;
-
-      while (hp1 > 0 && hp2 > 0 && turns < 50) {
-        turns += 1;
-        if (first === 'left') {
-          const dmg = calcDamage(selectedLeft, selectedRight);
-          hp2 = Math.max(0, hp2 - dmg.damage);
-          log.push({ turn: turns, attacker: selectedLeft.name, defender: selectedRight.name, ...dmg, remainingHP: hp2 });
-          if (hp2 > 0) {
-            const d2 = calcDamage(selectedRight, selectedLeft);
-            hp1 = Math.max(0, hp1 - d2.damage);
-            log.push({ turn: turns, attacker: selectedRight.name, defender: selectedLeft.name, ...d2, remainingHP: hp1 });
-          }
-        } else {
-          const dmg = calcDamage(selectedRight, selectedLeft);
-          hp1 = Math.max(0, hp1 - dmg.damage);
-          log.push({ turn: turns, attacker: selectedRight.name, defender: selectedLeft.name, ...dmg, remainingHP: hp1 });
-          if (hp1 > 0) {
-            const d2 = calcDamage(selectedLeft, selectedRight);
-            hp2 = Math.max(0, hp2 - d2.damage);
-            log.push({ turn: turns, attacker: selectedLeft.name, defender: selectedRight.name, ...d2, remainingHP: hp2 });
-          }
-        }
-      }
-
-      const winner = hp1 > 0 ? selectedLeft : selectedRight;
-      const loser = hp1 > 0 ? selectedRight : selectedLeft;
-      const winnerHP = hp1 > 0 ? hp1 : hp2;
-      const winnerMaxHP = hp1 > 0 ? maxHP1 : maxHP2;
-
-      setBattleResult({
-        winner,
-        loser,
-        turns,
-        winnerHP,
-        winnerMaxHP,
-        battleLog: log.slice(-6),
-      });
-      setBattling(false);
-      toast.success(`${winner.name} won in ${turns} turns!`);
-    }, 1200);
+    const hpLeft = baseHP(selectedLeft);
+    const hpRight = baseHP(selectedRight);
+    const first = decideFirstTurn();
+    setPveBattle({
+      active: true,
+      turn: first,
+      hpLeft,
+      hpRight,
+      maxLeft: hpLeft,
+      maxRight: hpRight,
+      log: [],
+      anim: { left: 'enter', right: 'enter' },
+      message:
+        first === 'left'
+          ? `${formatPokemonName(selectedLeft.name)} enters the field!`
+          : `${formatPokemonName(selectedRight.name)} takes the lead!`,
+      winner: null,
+      lastMove: null,
+    });
+    if (first === 'right') {
+      pushPveTimer(
+        setTimeout(() => {
+          const enemyMoves = getPokemonMoves(selectedRight);
+          const enemyMove = enemyMoves[Math.floor(Math.random() * enemyMoves.length)];
+          resolvePveTurn('right', enemyMove);
+        }, 850)
+      );
+    }
   };
 
   const reset = () => {
+    resetPveBattle();
     setSelectedLeft(null);
     setSelectedRight(null);
     setBattleResult(null);
@@ -752,20 +919,34 @@ const BattlePage = () => {
 
   const leftPlaceholder = useMemo(() => 'Search Pokemon...', []);
   const rightPlaceholder = leftPlaceholder;
+  const leftHPCurrent = pveBattle?.hpLeft ?? (selectedLeft ? baseHP(selectedLeft) : 0);
+  const rightHPCurrent = pveBattle?.hpRight ?? (selectedRight ? baseHP(selectedRight) : 0);
+  const leftHPMax = pveBattle?.maxLeft ?? (selectedLeft ? baseHP(selectedLeft) : 1);
+  const rightHPMax = pveBattle?.maxRight ?? (selectedRight ? baseHP(selectedRight) : 1);
+  const leftHPPercent = Math.max(0, Math.min(100, Math.round((leftHPCurrent / leftHPMax) * 100)));
+  const rightHPPercent = Math.max(0, Math.min(100, Math.round((rightHPCurrent / rightHPMax) * 100)));
+  const isPlayerTurn = pveBattle?.turn === 'left';
+  const pveReady = Boolean(selectedLeft && selectedRight);
+  const pveWinnerSide = pveBattle?.winner ?? null;
+  const autoSimPve = battleMode === 'pve';
 
   return (
     <div className="min-h-screen bg-background">
       <Toaster position="top-center" />
       <Header />
       
-      <div className="container mx-auto px-4 py-8">
+      <div className="container mx-auto px-4 pt-3 sm:pt-6 md:pt-8 pb-24 md:pb-12">
         <div className="max-w-6xl mx-auto">
-          <h1 className="text-4xl md:text-5xl font-bold text-center mb-3 text-gradient">
-            Pokemon Battle
-          </h1>
-          <p className="text-center text-muted-foreground mb-8">
-            Select two Pokemon and simulate an epic battle!
-          </p>
+          {!bothPlayersInRoom && (
+            <>
+              <h1 className="text-4xl md:text-5xl font-bold text-center mb-3 text-gradient hidden sm:block">
+                Pokemon Battle
+              </h1>
+              <p className="text-center text-muted-foreground mb-8 hidden sm:block">
+                Select two Pokemon and simulate an epic battle!
+              </p>
+            </>
+          )}
           
           {!isInRoom && (
             <div className="flex flex-wrap justify-center gap-3 mb-8">
@@ -793,43 +974,29 @@ const BattlePage = () => {
 
           {battleMode === 'pve' && (
             <>
-          <div className="grid md:grid-cols-2 gap-6 md:gap-8 mb-8">
-            <div className="flex flex-col gap-3 md:col-span-2">
-              <div className="flex flex-wrap gap-3 md:gap-4 items-center justify-center">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-semibold">Start:</span>
-                  <select
-                    className="border rounded-md px-3 py-2 bg-background"
-                    value={startMode}
-                    onChange={(e) => setStartMode(e.target.value)}
-                  >
-                    <option value="speed">By speed</option>
-                        <option value="left">Pokemon 1 starts</option>
-                        <option value="right">Pokemon 2 starts</option>
-                    <option value="random">Random</option>
-                  </select>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-semibold">Weather:</span>
-                  <select
-                    className="border rounded-md px-3 py-2 bg-background"
-                    value={weather}
-                    onChange={(e) => setWeather(e.target.value)}
-                  >
-                    <option value="clear">Clear</option>
-                    <option value="sun">Sunny</option>
-                    <option value="rain">Rain</option>
-                    <option value="snow">Snow</option>
-                    <option value="sandstorm">Sandstorm</option>
-                  </select>
-                </div>
+          <div className={`grid grid-cols-2 gap-5 md:gap-8 mb-8 ${pveBattle?.active ? 'hidden' : ''}`}>
+            <div className="flex flex-col gap-2 col-span-2">
+              <div className="hidden sm:flex items-center justify-center text-sm text-muted-foreground px-1 text-center">
+                Click the indicator next to each Pokemon to choose who starts. If none selected, the fastest starts.
               </div>
             </div>
 
             {/* Left Pokemon */}
             <div className="space-y-3 md:space-y-4">
-                  <h3 className="text-xl font-bold text-center">Pokemon 1</h3>
-              
+              <div className="flex items-center justify-center gap-2">
+                <h3 className="text-xl font-bold text-center">Pokemon 1</h3>
+                <button
+                  type="button"
+                  onClick={() => toggleStarter('left')}
+                  className={`h-6 w-6 rounded-full border-2 flex items-center justify-center transition ${
+                    startMode === 'left' ? 'border-primary bg-primary/20' : 'border-border bg-background'
+                  }`}
+                  aria-label="Select Pokemon 1 to start"
+                >
+                  {startMode === 'left' && <span className="h-3 w-3 rounded-full bg-primary" />}
+                </button>
+              </div>
+
               {!selectedLeft ? (
                 <div className="space-y-3">
                   <div className="relative">
@@ -861,44 +1028,35 @@ const BattlePage = () => {
                   )}
                 </div>
               ) : (
-                <div className="bg-card border-2 border-primary rounded-2xl p-4 md:p-6 text-center">
-                  <img
-                    src={selectedLeft.sprites.other['official-artwork'].front_default}
-                    alt={selectedLeft.name}
-                    className="w-48 h-48 mx-auto mb-4"
-                  />
-                  <h4 className="text-2xl font-bold capitalize mb-2">{selectedLeft.name}</h4>
-                  <Badge variant="secondary" className="mb-4">#{selectedLeft.id}</Badge>
-                  <div className="space-y-2 text-sm">
-                    <div className="flex justify-between">
-                      <span>HP:</span>
-                      <span className="font-bold">{selectedLeft.stats.find((s) => s.stat.name === 'hp').base_stat}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>Attack:</span>
-                      <span className="font-bold">{selectedLeft.stats.find((s) => s.stat.name === 'attack').base_stat}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>Defense:</span>
-                      <span className="font-bold">{selectedLeft.stats.find((s) => s.stat.name === 'defense').base_stat}</span>
-                    </div>
+                <div className="space-y-3">
+                  <div className="pointer-events-none max-w-xs w-full mx-auto">
+                    <PokemonCard pokemon={selectedLeft} />
                   </div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setSelectedLeft(null)}
-                    className="mt-4"
-                  >
-                    Swap Pokemon
-                  </Button>
+                  <div className="flex justify-center">
+                    <Button variant="outline" size="sm" onClick={() => setSelectedLeft(null)}>
+                      Swap Pokemon
+                    </Button>
+                  </div>
                 </div>
               )}
             </div>
             
             {/* Right Pokemon */}
             <div className="space-y-3 md:space-y-4">
-                  <h3 className="text-xl font-bold text-center">Pokemon 2</h3>
-              
+              <div className="flex items-center justify-center gap-2">
+                <h3 className="text-xl font-bold text-center">Pokemon 2</h3>
+                <button
+                  type="button"
+                  onClick={() => toggleStarter('right')}
+                  className={`h-6 w-6 rounded-full border-2 flex items-center justify-center transition ${
+                    startMode === 'right' ? 'border-primary bg-primary/20' : 'border-border bg-background'
+                  }`}
+                  aria-label="Select Pokemon 2 to start"
+                >
+                  {startMode === 'right' && <span className="h-3 w-3 rounded-full bg-primary" />}
+                </button>
+              </div>
+
               {!selectedRight ? (
                 <div className="space-y-3">
                   <div className="relative">
@@ -930,70 +1088,177 @@ const BattlePage = () => {
                   )}
                 </div>
               ) : (
-                <div className="bg-card border-2 border-accent rounded-2xl p-4 md:p-6 text-center">
-                  <img
-                    src={selectedRight.sprites.other['official-artwork'].front_default}
-                    alt={selectedRight.name}
-                    className="w-48 h-48 mx-auto mb-4"
-                  />
-                  <h4 className="text-2xl font-bold capitalize mb-2">{selectedRight.name}</h4>
-                  <Badge variant="secondary" className="mb-4">#{selectedRight.id}</Badge>
-                  <div className="space-y-2 text-sm">
-                    <div className="flex justify-between">
-                      <span>HP:</span>
-                      <span className="font-bold">{selectedRight.stats.find((s) => s.stat.name === 'hp').base_stat}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>Attack:</span>
-                      <span className="font-bold">{selectedRight.stats.find((s) => s.stat.name === 'attack').base_stat}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>Defense:</span>
-                      <span className="font-bold">{selectedRight.stats.find((s) => s.stat.name === 'defense').base_stat}</span>
-                    </div>
+                <div className="space-y-3">
+                  <div className="pointer-events-none max-w-xs w-full mx-auto">
+                    <PokemonCard pokemon={selectedRight} />
                   </div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setSelectedRight(null)}
-                    className="mt-4"
-                  >
-                    Swap Pokemon
-                  </Button>
+                  <div className="flex justify-center">
+                    <Button variant="outline" size="sm" onClick={() => setSelectedRight(null)}>
+                      Swap Pokemon
+                    </Button>
+                  </div>
                 </div>
               )}
             </div>
           </div>
           
-          {/* Battle Buttons */}
-          <div className="flex justify-center gap-4 mb-8">
-            <Button
-              onClick={simulateBattle}
-              disabled={!selectedLeft || !selectedRight || battling}
-              size="lg"
-              className="px-8"
-            >
-              {battling ? (
-                <>
-                  <RefreshCw className="mr-2 h-5 w-5 animate-spin" />
-                  Battling...
-                </>
-              ) : (
-                <>
-                  <Swords className="mr-2 h-5 w-5" />
-                  Start Battle
-                </>
-              )}
-            </Button>
-            
-            {(selectedLeft || selectedRight || battleResult) && (
-              <Button onClick={reset} variant="outline" size="lg">
-                Reset
+          {selectedLeft && selectedRight && !pveBattle?.active && (
+            <div className="flex justify-center mb-6">
+              <Button size="lg" onClick={startPveBattle} className="gap-2">
+                <Swords className="h-5 w-5" />
+                Start Battle
               </Button>
-            )}
-          </div>
-          
-          {/* Battle Result */}
+            </div>
+          )}
+
+          {selectedLeft && selectedRight && pveBattle?.active && (
+            <div className="gba-battle-shell battle-shell-gapless mb-8 relative overflow-hidden">
+              <div className="gba-battle-bg" />
+              <div className="gba-stage">
+                <div className="gba-status-row foe">
+                  <div className="gba-status-box foe">
+                    <div className="gba-status-header">
+                      <span className="gba-name">{(selectedRight?.name ?? 'Pokemon').toUpperCase()}</span>
+                      <span className="gba-level">Lv {estimateLevel(selectedRight)}</span>
+                    </div>
+                    <div className="gba-hp-row">
+                      <span className="gba-hp-label">HP</span>
+                      <div className="gba-hp-bar">
+                        <div
+                          className={`gba-hp-fill ${rightHPPercent <= 25 ? 'low' : rightHPPercent <= 60 ? 'mid' : ''}`}
+                          style={{ width: `${rightHPPercent}%` }}
+                        />
+                      </div>
+                    </div>
+                    <div className="gba-hp-text">{rightHPCurrent} / {rightHPMax}</div>
+                  </div>
+                </div>
+
+                <div
+                  className={`gba-sprite foe ${pveBattle?.anim?.right === 'attack' ? 'attack' : ''} ${pveBattle?.anim?.right === 'hit' ? 'hit' : ''} ${pveWinnerSide === 'right' ? 'winner' : ''}`}
+                >
+                  <img
+                    src={selectedRight?.sprites?.other?.['official-artwork']?.front_default ?? selectedRight?.sprites?.front_default}
+                    alt={selectedRight?.name}
+                  />
+                </div>
+
+                <div
+                  className={`gba-sprite player ${pveBattle?.anim?.left === 'attack' ? 'attack' : ''} ${pveBattle?.anim?.left === 'hit' ? 'hit' : ''} ${pveWinnerSide === 'left' ? 'winner' : ''} ${selectedLeft?.sprites?.back_default ? '' : 'front-fallback'}`}
+                >
+                  <img
+                    src={selectedLeft?.sprites?.back_default ?? selectedLeft?.sprites?.front_default ?? selectedLeft?.sprites?.other?.['official-artwork']?.front_default}
+                    alt={selectedLeft?.name}
+                  />
+                </div>
+
+                <div className="gba-status-row player">
+                  <div className="gba-status-box player">
+                    <div className="gba-status-header">
+                      <span className="gba-name">{(selectedLeft?.name ?? 'Pokemon').toUpperCase()}</span>
+                      <span className="gba-level">Lv {estimateLevel(selectedLeft)}</span>
+                    </div>
+                    <div className="gba-hp-row">
+                      <span className="gba-hp-label">HP</span>
+                      <div className="gba-hp-bar">
+                        <div
+                          className={`gba-hp-fill ${leftHPPercent <= 25 ? 'low' : leftHPPercent <= 60 ? 'mid' : ''}`}
+                          style={{ width: `${leftHPPercent}%` }}
+                        />
+                      </div>
+                    </div>
+                    <div className="gba-hp-text">{leftHPCurrent} / {leftHPMax}</div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="gba-message-box">
+                <div className="gba-message">
+                  {pveBattle?.message ?? 'Click Start Battle to begin.'}
+                </div>
+                {(pveBattle?.log ?? []).length > 0 && (
+                  <div className="gba-log">
+                    {((pveBattle.log ?? []).slice(-1)).map((entry, idx) => (
+                      <div key={idx} className="gba-log-row">
+                        <span className="font-semibold capitalize">{entry.attacker}</span>
+                        <span> used {entry.moveName}</span>
+                        <span className="text-destructive font-semibold"> -{entry.damage} HP</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="gba-menu">
+                {pveBattle?.winner ? (
+                  <div className="gba-winner-row">
+                    <div className="flex flex-col gap-1 text-sm">
+                      <span className="font-semibold">
+                        {formatPokemonName(pveBattle.winner === 'left' ? selectedLeft.name : selectedRight.name)} won!
+                      </span>
+                      <span className="text-muted-foreground">
+                        {pveBattle.log?.length ?? 0} turns | Replay or swap Pokemon.
+                      </span>
+                    </div>
+                    <div className="flex gap-2">
+                      <Button size="sm" onClick={startPveBattle} className="gap-2">
+                        <RefreshCw className="h-4 w-4" />
+                        New battle
+                      </Button>
+                      <Button size="sm" variant="outline" onClick={reset}>
+                        Swap Pokemon
+                      </Button>
+                    </div>
+                  </div>
+                  ) : (
+                    <>
+                      <div className="gba-turn-hint">
+                        {pveBattle?.active
+                          ? isPlayerTurn
+                            ? 'Your turn: choose a move.'
+                            : 'Opponent turn...'
+                          : 'Ready to start the Ruby-style battle.'}
+                      </div>
+                  {pveBattle?.active && !isPlayerTurn ? (
+                        <h2 className="text-lg font-semibold px-2">Waiting for opponent...</h2>
+                      ) : (
+                        <div className="gba-menu-grid">
+                          {getPokemonMoves(selectedLeft).map((move, idx) => (
+                            <button
+                              key={move.name + idx}
+                              className="gba-move move-appear"
+                              style={{ animationDelay: `${idx * 70}ms` }}
+                              disabled={!pveBattle?.active || pveLocked || autoSimPve || pveBattle?.winner || !isPlayerTurn}
+                              onClick={() => resolvePveTurn('left', move)}
+                            >
+                              <span className="move-name">{move.name.toUpperCase()}</span>
+                              <span className="move-power">Pwr {move.power}</span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    <div className="gba-menu-actions">
+                        <Button
+                          onClick={startPveBattle}
+                          disabled={!pveReady || pveBattle?.active}
+                          className="gap-2"
+                        >
+                          <Swords className="h-4 w-4" />
+                          Start battle
+                        </Button>
+                      <Button onClick={reset} variant="outline">
+                        Swap Pokemon
+                      </Button>
+                      <div className="text-xs text-muted-foreground">
+                        {pveBattle?.active ? 'Simulando PC vs PC a cada 3s' : 'Selecione e clique em iniciar'}
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+          )}
+
           {battleResult && (
             <div className="bg-card border rounded-2xl p-6 animate-scale-in">
               <h3 className="text-2xl font-bold text-center mb-6">Battle Result</h3>
@@ -1037,7 +1302,7 @@ const BattlePage = () => {
                         <span className="font-semibold capitalize">{log.defender}</span>
                         {' '} (HP: {log.remainingHP})
                         <div className="text-xs text-muted-foreground">
-                          Type {log.attackType} | type x{log.baseTypeMult.toFixed(2)} | STAB x{log.stabMult.toFixed(2)} | weather x{log.weatherMult.toFixed(2)} | total x{log.totalMult.toFixed(2)}
+                          Type {log.attackType} | total x{(log.totalMult ?? 1).toFixed(2)}
                         </div>
                       </div>
                     ))}
@@ -1053,13 +1318,13 @@ const BattlePage = () => {
 
               {outgoingInvite && !room && (
                 <div className="text-center text-xs text-muted-foreground">
-                  Convite enviado. Aguardando resposta do outro jogador.
+                  Invite sent. Waiting for the other player to respond.
                 </div>
               )}
 
               {myRematchPending && (
                 <div className="bg-muted/50 border border-dashed rounded-xl p-3 text-sm text-center">
-                  Aguardando {opponentPlayer?.name ?? 'adversario'} aceitar a nova partida.
+                  Waiting for {opponentPlayer?.name ?? 'opponent'} to accept the rematch.
                 </div>
               )}
 
@@ -1068,14 +1333,14 @@ const BattlePage = () => {
               {!user && (
                 <div className="bg-card border rounded-xl p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                   <div>
-                    <div className="font-semibold">Login necessario</div>
+                    <div className="font-semibold">Login required</div>
                     <p className="text-muted-foreground text-sm">
-                      Entre com sua conta Google para convidar amigos e aceitar convites.
+                      Sign in with Google to invite friends and accept invites.
                     </p>
                   </div>
                   <Button onClick={() => setShowLoginGate(true)} className="gap-2">
                     <LogIn className="h-4 w-4" />
-                    Login com Google
+                    Login with Google
                   </Button>
                 </div>
               )}
@@ -1084,7 +1349,7 @@ const BattlePage = () => {
                 <div className="bg-muted/60 border border-dashed rounded-xl p-4 space-y-3">
                   <div className="flex items-center gap-2 text-sm font-semibold">
                     <Sparkles className="h-4 w-4 text-primary" />
-                    Convites recebidos
+                    Received invites
                   </div>
                   {pendingInvites.map((invite) => {
                     const secsLeft = Math.max(0, 60 - Math.floor((nowTs - (invite.createdAt ?? nowTs)) / 1000));
@@ -1092,23 +1357,23 @@ const BattlePage = () => {
                     <div key={invite.id} className="bg-card border rounded-lg p-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                       <div className="flex items-center gap-3">
                         <Avatar className="h-10 w-10">
-                          <AvatarImage src={invite.fromPhoto ?? ''} alt={invite.fromName ?? 'Jogador'} />
+                          <AvatarImage src={invite.fromPhoto ?? ''} alt={invite.fromName ?? 'Player'} />
                           <AvatarFallback>
-                            {(invite.fromName ?? 'J')[0].toUpperCase()}
+                            {(invite.fromName ?? 'P')[0].toUpperCase()}
                           </AvatarFallback>
                         </Avatar>
                         <div>
-                          <div className="font-semibold">{invite.fromName ?? 'Jogador'}</div>
-                          <div className="text-xs text-muted-foreground">quer batalhar agora</div>
+                          <div className="font-semibold">{invite.fromName ?? 'Player'}</div>
+                          <div className="text-xs text-muted-foreground">wants to battle now</div>
                         </div>
                       </div>
                       <div className="flex gap-2">
                         <Button size="sm" className="gap-1" onClick={() => acceptInvite(invite)}>
                           <Swords className="h-4 w-4" />
-                          Aceitar {secsLeft}s
+                          Accept {secsLeft}s
                         </Button>
                         <Button size="sm" variant="outline" onClick={() => declineInvite(invite)}>
-                          Recusar
+                          Decline
                         </Button>
                       </div>
                     </div>
@@ -1118,19 +1383,19 @@ const BattlePage = () => {
               )}
 
               {isInRoom ? (
-                    <div className="bg-card border rounded-2xl p-6 space-y-6">
-                  <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-                    <div>
-                      <div className="text-sm text-muted-foreground">Sala ativa</div>
+                <div className="bg-card border rounded-2xl p-3 sm:p-6 space-y-4 sm:space-y-6 battle-room-card">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4">
+                    <div className="ml-2">
+                      <div className="text-sm text-muted-foreground">Active room</div>
                       <div className="text-xl font-bold">{selfName} vs {opponentName}</div>
                       <div className="text-xs text-muted-foreground">
                         {room.state === 'selecting'
-                          ? 'Escolha um Pokemon para comecar'
+                          ? 'Choose a Pokemon to start'
                           : matchFinished
-                          ? 'Partida encerrada'
+                          ? 'Match finished'
                           : isMyTurn
-                          ? 'Sua vez de atacar'
-                          : 'Vez do adversario'}
+                          ? 'Your turn to attack'
+                          : 'Opponent turn'}
                       </div>
                     </div>
                     <div className="flex gap-2">
@@ -1142,231 +1407,266 @@ const BattlePage = () => {
                         disabled={room?.rematchRequest?.status === 'pending'}
                       >
                         <RefreshCw className="h-4 w-4" />
-                        {room?.rematchRequest?.status === 'pending' ? 'Aguardando resposta' : 'Nova partida'}
+                        {room?.rematchRequest?.status === 'pending' ? 'Waiting response' : 'Play Again'}
                       </Button>
                       <Button variant="ghost" size="sm" className="gap-2" onClick={leaveRoom}>
                         <DoorOpen className="h-4 w-4" />
-                        Sair da sessao
+                        Exit Session
                       </Button>
                     </div>
                   </div>
 
-                  <div
-                    className={`grid ${
-                      room?.state === 'selecting' ? 'grid-cols-1' : 'grid-cols-2'
-                    } gap-2 md:gap-6 max-w-xl w-full mx-auto`}
-                  >
-                    <div
-                      className={`bg-muted/40 border rounded-xl p-2.5 md:p-6 space-y-2.5 md:space-y-5 border-green-500/50 shadow-[0_0_25px_rgba(34,197,94,0.35)] transition-opacity ${
-                        isMyTurn || room?.state === 'selecting' ? 'opacity-100 ring-2 ring-green-400' : 'opacity-60'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between">
-                        <div className="font-semibold text-xs md:text-base">
-                          {selfPlayer?.name ?? user?.displayName ?? 'Voce'}
+                  {room?.state === 'selecting' ? (
+                    <div className="space-y-4">
+                        <div className="flex flex-row items-center justify-between bg-muted/30 border rounded-xl p-3 md:p-4 gap-2 sm:gap-3">
+                          <div className="font-semibold text-sm md:text-base truncate">{opponentPlayer?.name ?? 'Opponent'}</div>
+                          <div className="flex items-center gap-2 sm:gap-3">
+                            <Badge
+                              variant="outline"
+                              className={`text-xs md:text-sm ${opponentPlayer?.ready ? 'bg-emerald-100 text-emerald-800 border-emerald-200' : 'bg-red-100 text-red-800 border-red-200'}`}
+                            >
+                              {opponentPlayer?.ready ? 'Ready' : 'Waiting'}
+                            </Badge>
+                            <div className="hidden sm:block text-xs md:text-sm text-muted-foreground">
+                              {opponentPlayer?.ready ? 'Waiting for both to start.' : 'Opponent choosing Pokemon.'}
+                            </div>
+                          </div>
                         </div>
-                        <Badge variant="secondary">{selfPlayer?.pokemon ? 'Pronto' : 'Escolhendo'}</Badge>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-5 max-w-3xl w-full mx-auto">
+                        <div
+                          className={`bg-muted/40 border rounded-xl p-2.5 md:p-6 space-y-3 md:space-y-5 border-green-500/50 shadow-[0_0_25px_rgba(34,197,94,0.35)] transition-opacity ${
+                            isMyTurn || room?.state === 'selecting' ? 'opacity-100 ring-2 ring-green-400' : 'opacity-60'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between">
+                            <div className="font-semibold text-xs md:text-base">
+                              {selfPlayer?.name ?? user?.displayName ?? 'You'}
+                            </div>
+                            <Badge variant="secondary">{selfPlayer?.ready ? 'Pronto' : 'Escolhendo'}</Badge>
+                          </div>
+
+                          {!selfPlayer?.pokemon ? (
+                            <div className="space-y-3">
+                              <div className="relative">
+                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
+                                <Input
+                                  placeholder="Buscar seu PokAcmon..."
+                                  value={pvpSearch}
+                                  onChange={(e) => setPvpSearch(e.target.value)}
+                                  className="pl-10"
+                                />
+                              </div>
+                              {pvpFiltered.length > 0 && (
+                                <div className="bg-card border rounded-lg divide-y max-h-56 md:max-h-64 overflow-y-auto">
+                                  {pvpFiltered.map((p) => (
+                                    <button
+                                      key={p.id}
+                                      onClick={() => setPokemonForRoom(p)}
+                                      className="w-full p-3 flex items-center gap-3 hover:bg-muted transition-colors text-left"
+                                    >
+                                      <img src={p.sprites.front_default} alt={p.name} className="w-12 h-12" />
+                                      <div>
+                                        <div className="font-semibold capitalize">{p.name}</div>
+                                        <div className="text-sm text-muted-foreground">#{p.id}</div>
+                                      </div>
+                                    </button>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          ) : (
+                            <div className="space-y-3">
+                              <div className="pointer-events-none max-w-[220px] sm:max-w-xs w-full mx-auto">
+                                <PokemonCard pokemon={selfPlayer.pokemon} />
+                              </div>
+                              <div className="flex flex-wrap gap-2">
+                                <Button
+                                  variant="default"
+                                  size="sm"
+                                  disabled={selfPlayer?.ready}
+                                  onClick={markReadyForRoom}
+                                  className="gap-2"
+                                >
+                                  Ready
+                                </Button>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() =>
+                                    update(ref(db, `rooms/${room.id}/players/${user.uid}`), {
+                                      pokemon: null,
+                                      hp: null,
+                                      maxHp: null,
+                                      ready: false,
+                                    })
+                                  }
+                                  className="gap-2"
+                                >
+                                  Swap Pokemon
+                                </Button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="hidden sm:flex bg-muted/15 border rounded-xl p-3 md:p-4 items-center justify-end gap-2">
+                          <div className="font-semibold text-xs md:text-base">{opponentPlayer?.name ?? 'Opponent'}</div>
+                          <Badge
+                            variant="outline"
+                            className={`${opponentPlayer?.ready ? 'bg-emerald-100 text-emerald-800 border-emerald-200' : 'bg-red-100 text-red-800 border-red-200'}`}
+                          >
+                            {opponentPlayer?.ready ? 'Ready' : 'Waiting'}
+                          </Badge>
+                        </div>
                       </div>
-                      {!selfPlayer?.pokemon ? (
-                        <div className="space-y-3">
-                          <div className="relative">
-                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
-                            <Input
-                              placeholder="Buscar seu PokAcmon..."
-                              value={pvpSearch}
-                              onChange={(e) => setPvpSearch(e.target.value)}
-                              className="pl-10"
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      <div className="gba-battle-shell gba-compact battle-shell-gapless relative overflow-hidden">
+                        <div className="gba-battle-bg" />
+                        <div className="gba-stage">
+                          <div className="gba-status-row foe">
+                            <div className="gba-status-box foe">
+                              <div className="gba-status-header">
+                                <span className="gba-name">{formatPokemonName(opponentPlayer?.pokemon?.name ?? 'Pokemon').toUpperCase()}</span>
+                                <span className="gba-level">Lv {estimateLevel(opponentPlayer?.pokemon ?? {})}</span>
+                              </div>
+                              <div className="gba-hp-row">
+                                <span className="gba-hp-label">HP</span>
+                                <div className="gba-hp-bar">
+                                  <div
+                                    className={`gba-hp-fill ${(opponentPlayer?.hp ?? 0) <= (opponentPlayer?.maxHp ?? 1) * 0.25 ? 'low' : (opponentPlayer?.hp ?? 0) <= (opponentPlayer?.maxHp ?? 1) * 0.6 ? 'mid' : ''}`}
+                                    style={{ width: `${Math.max(0, Math.min(100, Math.round(((opponentPlayer?.hp ?? 0) / Math.max(opponentPlayer?.maxHp ?? 1, 1)) * 100)))}%` }}
+                                  />
+                                </div>
+                              </div>
+                              <div className="gba-hp-text">
+                                {opponentPlayer?.hp ?? baseHP(opponentPlayer?.pokemon ?? {})} / {opponentPlayer?.maxHp ?? baseHP(opponentPlayer?.pokemon ?? {})}
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className={`gba-sprite foe ${room?.currentTurn === opponentId ? 'attack' : ''}`}>
+                            <img
+                              src={opponentPlayer?.pokemon?.sprites?.other?.['official-artwork']?.front_default ?? opponentPlayer?.pokemon?.sprites?.front_default}
+                              alt={opponentPlayer?.pokemon?.name ?? 'Foe Pokemon'}
                             />
                           </div>
-                          {pvpFiltered.length > 0 && (
-                            <div className="bg-card border rounded-lg divide-y max-h-56 md:max-h-64 overflow-y-auto">
-                              {pvpFiltered.map((p) => (
-                                <button
-                                  key={p.id}
-                                  onClick={() => setPokemonForRoom(p)}
-                                  className="w-full p-3 flex items-center gap-3 hover:bg-muted transition-colors text-left"
-                                >
-                                  <img src={p.sprites.front_default} alt={p.name} className="w-12 h-12" />
-                                  <div>
-                                    <div className="font-semibold capitalize">{p.name}</div>
-                                    <div className="text-sm text-muted-foreground">#{p.id}</div>
+
+                          <div className={`gba-sprite player ${room?.currentTurn === user?.uid ? 'attack' : ''} ${selfPlayer?.pokemon?.sprites?.back_default ? '' : 'front-fallback'}`}>
+                            <img
+                              src={selfPlayer?.pokemon?.sprites?.back_default ?? selfPlayer?.pokemon?.sprites?.front_default ?? selfPlayer?.pokemon?.sprites?.other?.['official-artwork']?.front_default}
+                              alt={selfPlayer?.pokemon?.name ?? 'Player Pokemon'}
+                            />
+                          </div>
+
+                          <div className="gba-status-row player">
+                            <div className="gba-status-box player">
+                              <div className="gba-status-header">
+                                <span className="gba-name">{formatPokemonName(selfPlayer?.pokemon?.name ?? 'Pokemon').toUpperCase()}</span>
+                                <span className="gba-level">Lv {estimateLevel(selfPlayer?.pokemon ?? {})}</span>
+                              </div>
+                              <div className="gba-hp-row">
+                                <span className="gba-hp-label">HP</span>
+                                <div className="gba-hp-bar">
+                                  <div
+                                    className={`gba-hp-fill ${(selfPlayer?.hp ?? 0) <= (selfPlayer?.maxHp ?? 1) * 0.25 ? 'low' : (selfPlayer?.hp ?? 0) <= (selfPlayer?.maxHp ?? 1) * 0.6 ? 'mid' : ''}`}
+                                    style={{ width: `${Math.max(0, Math.min(100, Math.round(((selfPlayer?.hp ?? 0) / Math.max(selfPlayer?.maxHp ?? 1, 1)) * 100)))}%` }}
+                                  />
+                                </div>
+                              </div>
+                              <div className="gba-hp-text">
+                                {selfPlayer?.hp ?? baseHP(selfPlayer?.pokemon ?? {})} / {selfPlayer?.maxHp ?? baseHP(selfPlayer?.pokemon ?? {})}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Message box temporarily hidden to reduce redundancy */}
+
+                        <div className="gba-menu">
+                          {matchFinished ? (
+                            <div className="gba-winner-row">
+                              <div className="flex flex-col gap-1 text-sm">
+                                <span className="font-semibold">
+                                  {room.winnerUid === user?.uid ? 'You won!' : `${opponentName} won!`}
+                                </span>
+                                <span className="text-muted-foreground">Choose rematch or leave.</span>
+                              </div>
+                              <div className="flex gap-2">
+                                <Button size="sm" onClick={resetRoomBattle} className="gap-2">
+                                  <RefreshCw className="h-4 w-4" />
+                                  Revanche
+                                </Button>
+                                <Button size="sm" variant="outline" onClick={leaveRoom}>
+                                  Sair
+                                </Button>
+                              </div>
+                            </div>
+                          ) : (
+                            <>
+                              <div className="gba-turn-hint">
+                                {isMyTurn ? 'Your turn to attack.' : 'Waiting for opponent.'}
+                              </div>
+                              {!isMyTurn ? (
+                                <h2 className="text-lg font-semibold px-2">Waiting for opponent...</h2>
+                              ) : (
+                                <div className="gba-menu-grid">
+                                  {getPokemonMoves(selfPlayer.pokemon).map((move, idx) => {
+                                    const Icon = move.icon ?? Swords;
+                                    const isSelected = selectedMove === move.name;
+                                    return (
+                                      <button
+                                        key={move.name + idx}
+                                        className={`gba-move move-appear ${isSelected ? 'ring-2 ring-primary' : ''}`}
+                                        style={{ animationDelay: `${idx * 70}ms` }}
+                                        disabled={!isMyTurn}
+                                        onClick={async () => {
+                                          setSelectedMove(move.name);
+                                          await takeTurn(move);
+                                          setSelectedMove(null);
+                                        }}
+                                      >
+                                        <span className="move-name flex items-center gap-2">
+                                          <Icon className="h-4 w-4" />
+                                          {move.name.toUpperCase()}
+                                        </span>
+                                        <span className="move-power">Pwr {move.power}</span>
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                            </>
+                          )}
+                        </div>
+                      </div>
+
+                      {room?.log?.length > 0 && (
+                        <div className="bg-muted/30 border rounded-xl p-3 space-y-2">
+                          <div className="flex items-center justify-between">
+                            <div className="font-semibold">Ultimas jogadas</div>
+                            <Button variant="ghost" size="sm" onClick={() => setShowLog((v) => !v)}>
+                              {showLog ? 'Recolher' : 'Expandir'}
+                            </Button>
+                          </div>
+                          {showLog && (
+                            <div className="space-y-2 max-h-56 overflow-y-auto text-sm">
+                              {[...room.log].slice(-6).reverse().map((entry, idx) => (
+                                <div key={idx} className="bg-background border rounded p-2">
+                                  <span className="font-semibold capitalize">{entry.attacker}</span> used{' '}
+                                  <span className="font-semibold">{entry.moveName}</span>
+                                  {entry.movePower ? ` (Power ${entry.movePower})` : ''} and dealt{' '}
+                                  <span className="text-destructive font-bold">{entry.damage}</span> damage to{' '}
+                                  <span className="font-semibold capitalize">{entry.defender}</span> (HP {entry.remainingHP})
+                                  <div className="text-xs text-muted-foreground">
+                                    Type {entry.attackType} | total x{entry.totalMult?.toFixed(2) ?? '1.00'}
                                   </div>
-                                </button>
+                                </div>
                               ))}
                             </div>
                           )}
-                        </div>
-                      ) : (
-                        <div className="space-y-3">
-                          <div className="flex flex-col items-start gap-2">
-                            <div className="font-bold capitalize text-sm md:text-lg">{selfPlayer.pokemon.name}</div>
-                            <div className="space-y-2 text-center">
-                              <div className="space-y-1">
-                                <div className="flex justify-between text-[11px] md:text-sm">
-                                  <span>HP</span>
-                                  <span className="font-semibold">
-                                    {selfPlayer.hp ?? baseHP(selfPlayer.pokemon)} / {selfPlayer.maxHp ?? baseHP(selfPlayer.pokemon)}
-                                  </span>
-                                </div>
-                                <Progress
-                                  value={((selfPlayer.hp ?? baseHP(selfPlayer.pokemon)) / (selfPlayer.maxHp ?? baseHP(selfPlayer.pokemon))) * 100}
-                                  className="h-2"
-                                />
-                              </div>
-                              <div className="flex items-center justify-center">
-                                <img
-                                  src={selfPlayer.pokemon.sprites.other['official-artwork'].front_default}
-                                  alt={selfPlayer.pokemon.name}
-                                  className="w-16 h-16 md:w-40 md:h-40"
-                                />
-                              </div>
-                            </div>
-                          </div>
-                          {(room.state === 'selecting' || matchFinished) && (
-                            <Button variant="outline" size="sm" onClick={() => resetRoomBattle()}>
-                              Trocar Pokemon
-                            </Button>
-                          )}
-                        </div>
-                      )}
-                    </div>
-
-                    <div
-                      className={`bg-muted/20 border rounded-xl p-2.5 md:p-6 space-y-2.5 md:space-y-5 border-red-500/50 shadow-[0_0_25px_rgba(239,68,68,0.35)] transition-opacity ${
-                        (!isMyTurn && !matchFinished && room?.state !== 'selecting') ? 'opacity-100 ring-2 ring-red-400' : 'opacity-60'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between">
-                        <div className="font-semibold text-xs md:text-base">{opponentPlayer?.name ?? 'Adversario'}</div>
-                        <Badge variant="outline">{opponentPlayer?.pokemon ? 'Pronto' : 'Aguardando'}</Badge>
-                      </div>
-                      {opponentPlayer?.pokemon && room.state !== 'selecting' ? (
-                        <div className="space-y-3">
-                          <div className="flex flex-col items-start gap-2">
-                            <div className="font-bold capitalize text-sm md:text-lg">{opponentPlayer.pokemon.name}</div>
-                            <div className="space-y-2 text-center">
-                              <div className="space-y-1">
-                                <div className="flex justify-between text-[11px] md:text-sm">
-                                  <span>HP</span>
-                                  <span className="font-semibold">
-                                    {opponentPlayer.hp ?? baseHP(opponentPlayer.pokemon)} / {opponentPlayer.maxHp ?? baseHP(opponentPlayer.pokemon)}
-                                  </span>
-                                </div>
-                                <Progress
-                                  value={((opponentPlayer.hp ?? baseHP(opponentPlayer.pokemon)) / (opponentPlayer.maxHp ?? baseHP(opponentPlayer.pokemon))) * 100}
-                                  className="h-2"
-                                />
-                              </div>
-                              <div className="flex items-center justify-center">
-                                <img
-                                  src={opponentPlayer.pokemon.sprites.other['official-artwork'].front_default}
-                                  alt={opponentPlayer.pokemon.name}
-                                  className="w-16 h-16 md:w-40 md:h-40"
-                                />
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      ) : opponentPlayer?.pokemon ? (
-                        <div className="text-sm text-muted-foreground">
-                          Pokemon escolhido, revelado quando a batalha começar.
-                        </div>
-                      ) : (
-                        <div className="text-sm text-muted-foreground">Aguardando o adversario escolher o Pokemon.</div>
-                      )}
-                    </div>
-                  </div>
-
-                  {matchFinished && selfPlayer?.pokemon && opponentPlayer?.pokemon && (
-                    <div className="bg-primary/10 border border-primary rounded-lg p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                      <div className="font-semibold">
-                        {room.winnerUid === user?.uid
-                          ? 'Voce venceu!'
-                          : `${opponentPlayer?.name ?? 'Oponente'} venceu a partida.`}
-                      </div>
-                      <div className="flex gap-2">
-                        <Button size="sm" onClick={resetRoomBattle} className="gap-2">
-                          <RefreshCw className="h-4 w-4" />
-                          Revanche
-                        </Button>
-                        <Button size="sm" variant="outline" onClick={leaveRoom}>
-                          Sair
-                        </Button>
-                      </div>
-                    </div>
-                  )}
-
-                  {selfPlayer?.pokemon && opponentPlayer?.pokemon && (
-                    <div className="bg-muted/40 border rounded-xl p-4 space-y-3">
-                      {matchFinished && (
-                        <div className="flex items-center justify-between">
-                          <Badge variant="secondary">Partida finalizada</Badge>
-                          <div className="text-sm text-muted-foreground">Escolha nova partida ou saia</div>
-                        </div>
-                      )}
-                      <div className="flex items-center justify-between">
-                        <div className="font-semibold text-base md:text-xl">{isMyTurn ? 'Sua vez de atacar' : 'Turno do adversario'}</div>
-                      </div>
-                      {!matchFinished ? (
-                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2">
-                          {getPokemonMoves(selfPlayer.pokemon).map((move, idx) => {
-                            const Icon = move.icon ?? Swords;
-                            const isSelected = selectedMove === move.name;
-                            return (
-                              <Button
-                                key={move.name + idx}
-                                variant={isSelected ? 'default' : 'outline'}
-                                size="sm"
-                                disabled={!isMyTurn}
-                                onClick={async () => {
-                                  setSelectedMove(move.name);
-                                  await takeTurn(move);
-                                  setSelectedMove(null);
-                                }}
-                                className="justify-between h-12 text-xs sm:text-sm gap-2"
-                              >
-                                <div className="flex items-center gap-2">
-                                  <Icon className="h-4 w-4" />
-                                  <span>{move.name}</span>
-                                </div>
-                                <Badge variant={isSelected ? 'outline' : 'secondary'} className="text-[10px] sm:text-xs">
-                                  Power {move.power}
-                                </Badge>
-                              </Button>
-                            );
-                          })}
-                        </div>
-                      ) : (
-                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                          <ShieldAlert className="h-4 w-4" />
-                          Partida encerrada. Clique em jogar de novo ou escolha novos PokAcmon.
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {room?.log?.length > 0 && (
-                    <div className="bg-muted/30 border rounded-xl p-4 space-y-3">
-                      <div className="flex items-center justify-between">
-                        <div className="font-semibold">Ultimas jogadas</div>
-                        <Button variant="ghost" size="sm" onClick={() => setShowLog((v) => !v)}>
-                          {showLog ? 'Recolher' : 'Expandir'}
-                        </Button>
-                      </div>
-                      {showLog && (
-                        <div className="space-y-2 max-h-56 overflow-y-auto">
-                          {[...room.log].slice(-6).reverse().map((entry, idx) => (
-                            <div key={idx} className="text-sm bg-background border rounded p-2">
-                              <span className="font-semibold capitalize">{entry.attacker}</span> usou{' '}
-                              <span className="font-semibold">{entry.moveName}</span>
-                              {entry.movePower ? ` (Power ${entry.movePower})` : ''} e causou{' '}
-                              <span className="text-destructive font-bold">{entry.damage}</span> de dano em{' '}
-                              <span className="font-semibold capitalize">{entry.defender}</span> (HP {entry.remainingHP})
-                              <div className="text-xs text-muted-foreground">
-                                Tipo {entry.attackType} | total x{entry.totalMult?.toFixed(2) ?? '1.00'}
-                              </div>
-                            </div>
-                          ))}
                         </div>
                       )}
                     </div>
@@ -1392,9 +1692,9 @@ const BattlePage = () => {
           <Dialog open={showLoginGate} onOpenChange={setShowLoginGate}>
             <DialogContent>
               <DialogHeader>
-                <DialogTitle>Entre com o Google</DialogTitle>
+                <DialogTitle>Sign in with Google</DialogTitle>
                 <DialogDescription>
-                  Voce precisa estar logado para desafiar outro jogador.
+                  You need to be logged in to challenge another player.
                 </DialogDescription>
               </DialogHeader>
               <div className="flex justify-end">
@@ -1411,7 +1711,7 @@ const BattlePage = () => {
                   }}
                 >
                   <LogIn className="h-4 w-4" />
-                  Login com Google
+                   Login with Google
                 </Button>
               </div>
             </DialogContent>
@@ -1420,22 +1720,22 @@ const BattlePage = () => {
           <Dialog open={showPlayersModal} onOpenChange={setShowPlayersModal}>
             <DialogContent>
               <DialogHeader>
-                <DialogTitle>Jogadores online</DialogTitle>
-                <DialogDescription>Escolha um jogador para enviar convite.</DialogDescription>
+                <DialogTitle>Online players</DialogTitle>
+                <DialogDescription>Choose a player to send an invite.</DialogDescription>
               </DialogHeader>
               <div className="space-y-2 max-h-80 overflow-y-auto">
                 {onlinePlayers.length === 0 && (
-                  <p className="text-sm text-muted-foreground text-center">Nenhum jogador online agora.</p>
+                  <p className="text-sm text-muted-foreground text-center">No players online right now.</p>
                 )}
                 {onlinePlayers.map((player) => (
                   <div key={player.uid} className="flex items-center justify-between border rounded-lg p-3">
                     <div className="flex items-center gap-3">
                       <Avatar className="h-10 w-10">
-                        <AvatarImage src={player.photoURL ?? ''} alt={player.name ?? 'Jogador'} />
-                        <AvatarFallback>{(player.name ?? 'J')[0].toUpperCase()}</AvatarFallback>
+                        <AvatarImage src={player.photoURL ?? ''} alt={player.name ?? 'Player'} />
+                        <AvatarFallback>{(player.name ?? 'P')[0].toUpperCase()}</AvatarFallback>
                       </Avatar>
                       <div>
-                        <div className="font-semibold">{player.name ?? 'Jogador'}</div>
+                        <div className="font-semibold">{player.name ?? 'Player'}</div>
                         <div className="text-xs text-muted-foreground">Status: {player.status ?? 'online'}</div>
                       </div>
                     </div>
@@ -1445,7 +1745,7 @@ const BattlePage = () => {
                       disabled={outgoingInvite?.targetUid === player.uid}
                       className="gap-1"
                     >
-                      {outgoingInvite?.targetUid === player.uid ? 'Convite enviado' : 'Invite to battle'}
+                      {outgoingInvite?.targetUid === player.uid ? 'Invite sent' : 'Invite to battle'}
                     </Button>
                   </div>
                 ))}
@@ -1456,18 +1756,18 @@ const BattlePage = () => {
           <Dialog open={showRematchModal} onOpenChange={(open) => !open && setShowRematchModal(false)}>
             <DialogContent>
               <DialogHeader>
-                <DialogTitle>Nova partida?</DialogTitle>
+                <DialogTitle>New match?</DialogTitle>
                 <DialogDescription>
-                  {rematchRequest?.fromName ?? 'O adversario'} quer jogar novamente. Aceitar?
+                  {rematchRequest?.fromName ?? 'The opponent'} wants to play again. Accept?
                 </DialogDescription>
               </DialogHeader>
               <div className="flex justify-end gap-2">
                 <Button variant="outline" onClick={() => { declineRematch(); setShowRematchModal(false); }}>
-                  Recusar
+                  Decline
                 </Button>
                 <Button onClick={() => { acceptRematch(); setShowRematchModal(false); }} className="gap-2">
                   <RefreshCw className="h-4 w-4" />
-                  Aceitar
+                  Accept
                 </Button>
               </div>
             </DialogContent>

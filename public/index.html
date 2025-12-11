@@ -20,6 +20,14 @@
     -->
         <title>Emergent | Fullstack App</title>
         <script src="https://assets.emergent.sh/scripts/emergent-main.js"></script>
+        <style>
+            @media (max-width: 768px) {
+                #emergent-badge {
+                    display: none !important;
+                }
+            }
+        </style>
+
     </head>
     <body>
         <noscript>You need to enable JavaScript to run this app.</noscript>
@@ -39,7 +47,7 @@
             target="_blank"
             href="https://app.emergent.sh/?utm_source=emergent-badge"
             style="
-                display: flex !important;
+                display: flex;
                 align-items: center !important;
                 position: fixed !important;
                 bottom: 20px;

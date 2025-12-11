@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Menu, X, Sun, Moon, Github, LogIn, LogOut, Pencil } from 'lucide-react';
+import { Sun, Moon, Github, LogIn, LogOut, Pencil, Home, Shapes, Milestone, Swords, Heart } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Input } from '@/components/ui/input';
@@ -20,7 +20,6 @@ import { onValue, ref, update } from 'firebase/database';
 import { toast } from 'sonner';
 
 export const Header = () => {
-  const [isMenuOpen, setIsMenuOpen] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
   const { theme, setTheme } = useTheme();
@@ -115,6 +114,14 @@ export const Header = () => {
     }).catch(() => {});
   }, [user, location.pathname]);
 
+  const mobileLinks = [
+    { to: '/', label: 'Home', icon: Home },
+    { to: '/types', label: 'Types', icon: Shapes },
+    { to: '/generations', label: 'Regions', icon: Milestone },
+    { to: '/battle', label: 'Battles', icon: Swords },
+    { to: '/favorites', label: 'Favorites', icon: Heart },
+  ];
+
   const NavButton = ({ to, label, closeOnClick = false, variant = 'ghost' }) => {
     const common =
       variant === 'solid'
@@ -181,6 +188,12 @@ export const Header = () => {
                 <Pencil className="h-4 w-4" />
                 Editar nome
               </DropdownMenuItem>
+              <DropdownMenuItem asChild className="gap-2">
+                <a href="https://www.ivanamorim.com.br" target="_blank" rel="noreferrer" className="flex items-center gap-2 w-full">
+                  <Github className="h-4 w-4" />
+                  Build by Ivan Amorim
+                </a>
+              </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
           <Button
@@ -212,6 +225,7 @@ export const Header = () => {
   };
 
   return (
+    <>
     <header className="sticky top-0 z-50 bg-card/80 backdrop-blur-lg border-b border-border">
       <div className="container mx-auto px-4">
         <div className="flex items-center justify-between h-16">
@@ -233,7 +247,7 @@ export const Header = () => {
           <nav className="hidden md:flex items-center gap-4">
             <NavButton to="/" label="Home" />
             <NavButton to="/types" label="Types" />
-            <NavButton to="/generations" label="Generations" />
+            <NavButton to="/generations" label="Regions" />
             <NavButton to="/battle" label="Battle" />
             <NavButton to="/favorites" label="Favorites" />
             <a
@@ -259,52 +273,33 @@ export const Header = () => {
             <AccountButton />
           </nav>
           
-          {/* Mobile Menu Button */}
-          <Button
-            variant="ghost"
-            size="icon"
-            className="md:hidden"
-            onClick={() => setIsMenuOpen(!isMenuOpen)}
-          >
-            {isMenuOpen ? <X /> : <Menu />}
-          </Button>
+          {/* Mobile actions (icons only) */}
+          <div className="md:hidden flex items-center gap-2">
+            {mounted && (
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={toggleTheme}
+                className="h-9 w-9 border border-border"
+                aria-label="Toggle theme"
+              >
+                {themeIcon}
+              </Button>
+            )}
+            <a
+              href="https://github.com/ivan12"
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center justify-center h-9 w-9 rounded-md border border-border hover:bg-muted transition-colors"
+              aria-label="GitHub"
+            >
+              <Github className="h-5 w-5" />
+            </a>
+            <AccountButton />
+          </div>
         </div>
         
-        {/* Mobile Menu */}
-        {isMenuOpen && (
-          <nav className="md:hidden py-4 animate-slide-up">
-            <div className="bg-card border rounded-xl shadow-lg p-3 space-y-2">
-              <NavButton to="/" label="Home" closeOnClick variant="solid" />
-              <NavButton to="/types" label="Types" closeOnClick variant="solid" />
-              <NavButton to="/generations" label="Generations" closeOnClick variant="solid" />
-              <NavButton to="/battle" label="Battle" closeOnClick variant="solid" />
-              <NavButton to="/favorites" label="Favorites" closeOnClick variant="solid" />
-              <a
-                href="https://github.com/ivan12"
-                target="_blank"
-                rel="noreferrer"
-                className="flex items-center gap-2 w-full px-3 py-2 rounded-md border border-border text-left hover:bg-muted"
-              >
-                <Github className="h-4 w-4" />
-                GitHub
-              </a>
-              <AccountButton inlineLabel />
-              {mounted && (
-                <Button
-                  variant="outline"
-                  className="w-full justify-start gap-2"
-                  onClick={() => {
-                    toggleTheme();
-                    setIsMenuOpen(false);
-                  }}
-                >
-                  {themeIcon}
-                  Toggle theme
-                </Button>
-              )}
-            </div>
-          </nav>
-        )}
+        {/* Mobile menu removed: bottom nav will handle links */}
       </div>
       <Dialog open={editNameOpen} onOpenChange={setEditNameOpen}>
         <DialogContent>
@@ -325,6 +320,26 @@ export const Header = () => {
         </DialogContent>
       </Dialog>
     </header>
+    {/* Mobile bottom nav */}
+    <nav className="md:hidden fixed bottom-2 left-2 right-2 z-40">
+      <div className="bg-card/95 backdrop-blur border rounded-2xl shadow-xl p-2 flex items-center justify-between gap-1">
+        {mobileLinks.map((link) => {
+          const Icon = link.icon;
+          const active = isActive(link.to);
+          return (
+            <button
+              key={link.to}
+              onClick={() => navigate(link.to)}
+              className={`flex-1 flex flex-col items-center gap-1 py-2 rounded-xl transition-all ${active ? 'bg-primary text-primary-foreground shadow-md' : 'hover:bg-muted text-foreground'}`}
+            >
+              <Icon className="h-5 w-5" />
+              <span className="text-[11px] font-semibold">{link.label}</span>
+            </button>
+          );
+        })}
+      </div>
+    </nav>
+    </>
   );
 };
 

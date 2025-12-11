@@ -11,6 +11,7 @@ import { Input } from '@/components/ui/input';
 import { Toaster } from '@/components/ui/sonner';
 import { Button } from '@/components/ui/button';
 import { fetchPokemonFromDb, savePokemonToDb } from '@/lib/pokemon-store';
+import { useFavorites } from '@/hooks/use-favorites';
 
 const TOTAL_POKEMON = 1010;
 const MIN_POKEMON_CACHE = 800;
@@ -19,6 +20,7 @@ const PAGE_SIZE = 151;
 
 const HomePage = () => {
   const navigate = useNavigate();
+  const { favorites } = useFavorites();
   const [pokemon, setPokemon] = useState([]);
   const [filteredPokemon, setFilteredPokemon] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
@@ -34,7 +36,7 @@ const HomePage = () => {
   useEffect(() => {
     setCurrentPage(1);
     filterPokemon();
-  }, [searchTerm, selectedType, selectedGeneration, pokemon]);
+  }, [searchTerm, selectedType, selectedGeneration, pokemon, favorites]);
 
   const fetchPokemon = async () => {
     try {
@@ -81,14 +83,17 @@ const HomePage = () => {
   };
 
   const filterPokemon = () => {
-    let filtered = [...pokemon];
-    
-    if (searchTerm.trim()) {
-      const term = searchTerm.trim().toLowerCase();
-      filtered = filtered.filter((p) =>
-        p.name.toLowerCase().includes(term) ||
-        p.id.toString().includes(term) ||
-        p.types.some((t) => t.type.name.toLowerCase().includes(term))
+    const term = searchTerm.trim().toLowerCase();
+    const matchFavorites = (term.includes('fav') || term.includes('lik')) && favorites.length > 0;
+
+    let filtered = matchFavorites ? [...favorites] : [...pokemon];
+
+    if (term && !matchFavorites) {
+      filtered = filtered.filter(
+        (p) =>
+          p.name.toLowerCase().includes(term) ||
+          p.id.toString().includes(term) ||
+          p.types.some((t) => t.type.name.toLowerCase().includes(term))
       );
     }
 
@@ -151,10 +156,10 @@ const HomePage = () => {
       </div>
       
       {/* Pokemon Grid */}
-      <div className="container mx-auto px-6 md:px-10 pb-16">
+      <div className="container mx-auto px-5 md:px-10 pb-16">
         <div className="max-w-5xl mx-auto">
           {loading ? (
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-4 gap-4">
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-4 gap-3 sm:gap-4">
               {[...Array(24)].map((_, i) => (
                 <div
                   key={i}
@@ -163,7 +168,7 @@ const HomePage = () => {
               ))}
             </div>
           ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-4 gap-4 animate-slide-up">
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-4 gap-3 sm:gap-4 animate-slide-up">
               {visiblePokemon.map((p) => (
                 <PokemonCard key={p.id} pokemon={p} />
               ))}
@@ -205,6 +210,3 @@ const HomePage = () => {
 };
 
 export default HomePage;
-
-
-
