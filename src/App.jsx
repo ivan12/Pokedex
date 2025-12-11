@@ -1,5 +1,5 @@
 import '@/App.css';
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { HashRouter, Routes, Route } from 'react-router-dom';
 import HomePage from '@/pages/HomePage';
 import PokemonDetailPage from '@/pages/PokemonDetailPage';
 import TypesPage from '@/pages/TypesPage';
@@ -10,7 +10,7 @@ import FavoritesPage from '@/pages/FavoritesPage';
 function App() {
   return (
     <div className="App">
-      <BrowserRouter basename="/pokedex">
+      <HashRouter>
         <Routes>
           <Route path="/" element={<HomePage />} />
           <Route path="/pokemon/:id" element={<PokemonDetailPage />} />
@@ -19,7 +19,7 @@ function App() {
           <Route path="/battle" element={<BattlePage />} />
           <Route path="/favorites" element={<FavoritesPage />} />
         </Routes>
-      </BrowserRouter>
+      </HashRouter>
     </div>
   );
 }

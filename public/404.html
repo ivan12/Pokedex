@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Redirecting...</title>
+    <script>
+      (function () {
+        // SPA redirect for static hosts: preserve path and query
+        var l = window.location;
+        var base = "/pokedex";
+        var path = l.pathname.replace(base, "");
+        if (!path.startsWith("/")) {
+          path = "/" + path;
+        }
+        var target = base + "/#!" + path + l.search + l.hash;
+        l.replace(target);
+      })();
+    </script>
+  </head>
+  <body>
+    <noscript>
+      <p>This page requires JavaScript. <a href="/pokedex/">Go back to home</a>.</p>
+    </noscript>
+  </body>
+</html>

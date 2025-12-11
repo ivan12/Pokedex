@@ -1,8 +1,23 @@
-import { useEffect, useState } from 'react';
-import { Menu, X, Sun, Moon, Github } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Menu, X, Sun, Moon, Github, LogIn, LogOut, Pencil } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { Input } from '@/components/ui/input';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useTheme } from 'next-themes';
+import { useAuth } from '@/hooks/useAuth';
+import { db } from '@/lib/firebase';
+import { onValue, ref, update } from 'firebase/database';
+import { toast } from 'sonner';
 
 export const Header = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -10,11 +25,95 @@ export const Header = () => {
   const location = useLocation();
   const { theme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
+  const { user, authLoading, loginWithGoogle, logout, updateDisplayName } = useAuth();
+  const [editNameOpen, setEditNameOpen] = useState(false);
+  const [nameInput, setNameInput] = useState('');
+  const [savingName, setSavingName] = useState(false);
+  const isLogged = useMemo(() => {
+    const uid = user?.uid;
+    return typeof uid === 'string' && uid.trim().length > 0;
+  }, [user]);
+  const [pendingInviteIds, setPendingInviteIds] = useState([]);
+  const lastInviteToastRef = useRef(null);
+
   useEffect(() => setMounted(true), []);
+  useEffect(() => {
+    if (!user) {
+      setPendingInviteIds([]);
+      return;
+    }
+    const invitesRef = ref(db, `invites/${user.uid}`);
+    const unsub = onValue(invitesRef, (snap) => {
+      if (!snap.exists()) {
+        setPendingInviteIds([]);
+        return;
+      }
+      const pending = [];
+      snap.forEach((child) => {
+        const val = child.val();
+        if (val?.status === 'pending') pending.push({ id: child.key, createdAt: val.createdAt ?? Date.now() });
+      });
+      setPendingInviteIds(pending);
+      const newest = pending[0];
+      if (newest && lastInviteToastRef.current !== newest.id && location.pathname !== '/battle') {
+        lastInviteToastRef.current = newest.id;
+        toast.message('Novo convite!', {
+          description: 'Abra Player vs Player em Battle para aceitar.',
+        });
+      }
+      const now = Date.now();
+      pending.forEach((inv) => {
+        if (now - (inv.createdAt ?? now) > 60000) {
+          update(ref(db, `invites/${user.uid}/${inv.id}`), { status: 'declined' }).catch(() => {});
+        }
+      });
+    });
+    return () => unsub();
+  }, [user, location.pathname]);
 
   const isActive = (path) => location.pathname === path;
   const toggleTheme = () => setTheme(theme === 'dark' ? 'light' : 'dark');
   const themeIcon = theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />;
+  const initials = useMemo(() => user?.displayName?.slice(0, 2)?.toUpperCase() ?? 'T', [user]);
+
+  const handleLogin = async () => {
+    try {
+      await loginWithGoogle();
+    } catch (err) {
+      console.error('Failed to login', err);
+    }
+  };
+
+  useEffect(() => {
+    if (user?.displayName) {
+      setNameInput(user.displayName);
+    }
+  }, [user]);
+
+  const handleSaveName = async () => {
+    if (!nameInput.trim()) return;
+    try {
+      setSavingName(true);
+      await updateDisplayName(nameInput.trim());
+      setEditNameOpen(false);
+    } catch (err) {
+      console.error('Failed to update display name', err);
+    } finally {
+      setSavingName(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!user || location.pathname.startsWith('/battle')) return;
+    const presenceRef = ref(db, `presence/${user.uid}`);
+    update(presenceRef, {
+      status: 'online',
+      lastSeen: Date.now(),
+      roomId: null,
+      name: user.displayName ?? 'Trainer',
+      photoURL: user.photoURL ?? '',
+    }).catch(() => {});
+  }, [user, location.pathname]);
 
   const NavButton = ({ to, label, closeOnClick = false, variant = 'ghost' }) => {
     const common =
@@ -38,6 +137,80 @@ export const Header = () => {
     );
   };
 
+  const AccountButton = ({ inlineLabel = false }) => {
+    if (authLoading && mounted) {
+      return (
+        <div className={`${inlineLabel ? 'w-full' : 'w-10'} h-10 rounded-md border border-border animate-pulse`} />
+      );
+    }
+
+    if (isLogged) {
+      return (
+        <div className={`flex items-center ${inlineLabel ? 'w-full justify-between' : 'gap-2'}`}>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className={`${inlineLabel ? 'px-3 w-auto gap-2' : 'w-10 px-0'} h-10 border border-border`}
+              >
+                <Avatar className="h-7 w-7">
+                  <AvatarImage src={user.photoURL ?? ''} alt={user.displayName ?? 'Trainer'} />
+                  <AvatarFallback>{initials}</AvatarFallback>
+                </Avatar>
+                <span className="text-sm font-semibold truncate max-w-[120px]">
+                  {user.displayName ?? 'Trainer'}
+                </span>
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-56">
+              <DropdownMenuLabel>
+                <div className="flex items-center gap-2">
+                  <Avatar className="h-8 w-8">
+                    <AvatarImage src={user.photoURL ?? ''} alt={user.displayName ?? 'Trainer'} />
+                    <AvatarFallback>{initials}</AvatarFallback>
+                  </Avatar>
+                  <div>
+                    <div className="font-semibold leading-tight">{user.displayName ?? 'Trainer'}</div>
+                    {user.email && <div className="text-xs text-muted-foreground truncate">{user.email}</div>}
+                  </div>
+                </div>
+              </DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => setEditNameOpen(true)} className="gap-2">
+                <Pencil className="h-4 w-4" />
+                Editar nome
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <Button
+            variant={inlineLabel ? 'outline' : 'ghost'}
+            size={inlineLabel ? 'sm' : 'icon'}
+            onClick={() => logout()}
+            className={`${inlineLabel ? 'gap-2 border-border' : ''}`}
+          >
+            <LogOut className="h-4 w-4" />
+            {inlineLabel && <span>Sair</span>}
+          </Button>
+        </div>
+      );
+    }
+
+    if (!mounted) return null;
+
+    return (
+      <Button
+        variant={inlineLabel ? 'outline' : 'ghost'}
+        size={inlineLabel ? 'sm' : 'icon'}
+        onClick={handleLogin}
+        className={`${inlineLabel ? 'gap-2 border-border w-full justify-start' : 'border border-border'}`}
+      >
+        <LogIn className="h-4 w-4" />
+        {inlineLabel && <span>Login</span>}
+      </Button>
+    );
+  };
+
   return (
     <header className="sticky top-0 z-50 bg-card/80 backdrop-blur-lg border-b border-border">
       <div className="container mx-auto px-4">
@@ -57,7 +230,7 @@ export const Header = () => {
           </button>
           
           {/* Desktop Navigation */}
-          <nav className="hidden md:flex items-center gap-6">
+          <nav className="hidden md:flex items-center gap-4">
             <NavButton to="/" label="Home" />
             <NavButton to="/types" label="Types" />
             <NavButton to="/generations" label="Generations" />
@@ -83,6 +256,7 @@ export const Header = () => {
                 {themeIcon}
               </Button>
             )}
+            <AccountButton />
           </nav>
           
           {/* Mobile Menu Button */}
@@ -114,6 +288,7 @@ export const Header = () => {
                 <Github className="h-4 w-4" />
                 GitHub
               </a>
+              <AccountButton inlineLabel />
               {mounted && (
                 <Button
                   variant="outline"
@@ -131,6 +306,24 @@ export const Header = () => {
           </nav>
         )}
       </div>
+      <Dialog open={editNameOpen} onOpenChange={setEditNameOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Editar nome de exibicao</DialogTitle>
+            <DialogDescription>Esse nome aparece para outros jogadores.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <Input value={nameInput} onChange={(e) => setNameInput(e.target.value)} placeholder="Seu nome" />
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setEditNameOpen(false)}>Cancelar</Button>
+              <Button onClick={handleSaveName} disabled={savingName || !nameInput.trim()} className="gap-2">
+                {savingName && <span className="animate-pulse">...</span>}
+                Salvar
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </header>
   );
 };
