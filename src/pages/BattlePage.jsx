@@ -67,6 +67,11 @@ const BattlePage = () => {
   const [pvpFiltered, setPvpFiltered] = useState([]);
   const [selectedMove, setSelectedMove] = useState(null);
   const [showRematchModal, setShowRematchModal] = useState(false);
+  const [cardResultModal, setCardResultModal] = useState(null);
+  const [cardModalStage, setCardModalStage] = useState('front'); // front -> back -> result
+  const [myCardDisplay, setMyCardDisplay] = useState(null);
+  const [myCardRevealStage, setMyCardRevealStage] = useState('front'); // front | back
+  const [myCardRolling, setMyCardRolling] = useState(false);
   const [pveBattle, setPveBattle] = useState(null);
   const [pveLocked, setPveLocked] = useState(false);
   const pveTimersRef = useRef([]);
@@ -281,6 +286,18 @@ const BattlePage = () => {
   const DEFAULT_LEVEL = 100;
   const DEFAULT_IV = 31;
   const DEFAULT_EV = 0;
+  const REGION_RANGES = {
+    all: { start: 1, end: 1010 },
+    kanto: { start: 1, end: 151 },
+    johto: { start: 152, end: 251 },
+    hoenn: { start: 252, end: 386 },
+    sinnoh: { start: 387, end: 493 },
+    unova: { start: 494, end: 649 },
+    kalos: { start: 650, end: 721 },
+    alola: { start: 722, end: 809 },
+    galar: { start: 810, end: 905 },
+    paldea: { start: 906, end: 1025 },
+  };
 
   const computeBattleStats = (p) => {
     const level = p?.level ?? DEFAULT_LEVEL;
@@ -315,6 +332,24 @@ const BattlePage = () => {
   };
 
   const baseHP = (p) => computeBattleStats(p).hp;
+
+  const getRandomPokemonByRegion = (region = 'all') => {
+    const range = REGION_RANGES[region] ?? REGION_RANGES.all;
+    const pool = pokemon.filter((p) => p.id >= range.start && p.id <= range.end);
+    if (!pool.length) return null;
+    return pool[Math.floor(Math.random() * pool.length)];
+  };
+
+  const getStatValue = (p, statKey) => {
+    const stats = computeBattleStats(p);
+    const map = {
+      strength: stats.hp ?? 0,
+      attack: stats.attack ?? 0,
+      defense: stats.defense ?? 0,
+      agility: stats.speed ?? 0,
+    };
+    return map[statKey] ?? 0;
+  };
 
   const serializePokemon = (p) => ({
     id: p.id,
@@ -389,6 +424,10 @@ const BattlePage = () => {
     if (!room?.players) return null;
     return Object.keys(room.players).find((pid) => pid !== user?.uid) ?? null;
   }, [room, user]);
+  const lastRevealRef = useRef({ round: 0, revealed: false });
+  const cardStageTimerRef = useRef([]);
+  const cardRollTimerRef = useRef(null);
+  const prevHandRef = useRef(null);
 
   const resetSessionState = () => {
     setOutgoingInvite(null);
@@ -417,6 +456,21 @@ const BattlePage = () => {
   const isInRoom = Boolean(room?.players?.[user?.uid]);
   const selfName = selfPlayer?.name ?? user?.displayName ?? 'You';
   const opponentName = opponentPlayer?.name ?? 'Opponent';
+  const cardBattle = room?.cardBattle ?? null;
+  const cardRound = cardBattle?.round ?? 0;
+  const cardMaxRounds = cardBattle?.maxRounds ?? room?.cardBestOf ?? 3;
+  const cardScores = cardBattle?.scores ?? {};
+  const cardRevealed = Boolean(cardBattle?.revealed);
+  const cardMatchWinner = cardBattle?.matchWinner ?? null;
+  const cardWinnerRound = cardBattle?.winnerRound ?? null;
+  const myCard = user ? cardBattle?.hands?.[user.uid] : null;
+  const oppCard = opponentId ? cardBattle?.hands?.[opponentId] : null;
+  const selectedStat = cardBattle?.selectedStat ?? null;
+  const chooserUid = cardBattle?.chooserUid ?? null;
+  const myCardChoice = selectedStat && chooserUid === user?.uid ? selectedStat : null;
+  const oppCardChoice = selectedStat && chooserUid === opponentId ? selectedStat : null;
+  const cardChooserName =
+    chooserUid === user?.uid ? 'You choose this round' : chooserUid === opponentId ? `${opponentName} chooses` : 'Random chooser';
   const [nowTs, setNowTs] = useState(Date.now());
   const decliningRef = useRef(new Set());
   const [showLog, setShowLog] = useState(false);
@@ -428,6 +482,46 @@ const BattlePage = () => {
       setSelectedMove(null);
     }
   }, [opponentRematchPending, activeRoomId]);
+  useEffect(() => {
+    if (room?.gameMode !== 'cards') {
+      setCardResultModal(null);
+      return;
+    }
+    if (!cardBattle || !cardRevealed || !selectedStat) return;
+    const round = cardBattle.round ?? 0;
+    if (lastRevealRef.current.round === round && lastRevealRef.current.revealed) return;
+    if (!myCard || !oppCard) return;
+    const myVal = getStatValue(myCard, selectedStat);
+    const oppVal = getStatValue(oppCard, selectedStat);
+    const outcome = cardWinnerRound === null ? 'tie' : cardWinnerRound === user?.uid ? 'win' : 'lose';
+    setCardResultModal({
+      outcome,
+      stat: selectedStat,
+      myVal,
+      oppVal,
+      myCardSnapshot: myCard,
+      oppCardSnapshot: oppCard,
+    });
+    lastRevealRef.current = { round, revealed: true };
+  }, [room?.gameMode, cardBattle, cardRevealed, selectedStat, myCard, oppCard, cardWinnerRound, user?.uid]);
+  useEffect(() => {
+    cardStageTimerRef.current.forEach(clearTimeout);
+    cardStageTimerRef.current = [];
+    if (!cardResultModal) return;
+    setCardModalStage('front');
+    cardStageTimerRef.current.push(
+      setTimeout(() => setCardModalStage('back'), 1200),
+      setTimeout(() => setCardModalStage('result'), 2400)
+    );
+    return () => {
+      cardStageTimerRef.current.forEach(clearTimeout);
+      cardStageTimerRef.current = [];
+    };
+  }, [cardResultModal]);
+  const handleRevealBack = () => {
+    if (myCardRolling) return;
+    setMyCardRevealStage('back');
+  };
   useEffect(() => {
     const timer = setInterval(() => setNowTs(Date.now()), 1000);
     return () => clearInterval(timer);
@@ -537,7 +631,7 @@ const BattlePage = () => {
   const maybeStartRoom = useCallback(
     async (roomId) => {
       await runTransaction(ref(db, `rooms/${roomId}`), (current) => {
-        if (!current || current.state !== 'selecting') return current;
+        if (!current || current.state !== 'selecting' || current.gameMode === 'cards') return current;
         const ids = Object.keys(current.players || {});
         const ready = ids.every((pid) => current.players[pid]?.pokemon && current.players[pid]?.ready);
         if (!ready || current.currentTurn) return current;
@@ -563,6 +657,35 @@ const BattlePage = () => {
     if (!room || !user) return;
     await update(ref(db, `rooms/${room.id}/players/${user.uid}`), { ready: true });
     await maybeStartRoom(room.id);
+  };
+
+  const setGameMode = async (mode) => {
+    if (!room || !user || room.adminUid !== user.uid) return;
+    const updates =
+      mode === 'cards'
+        ? {
+            gameMode: 'cards',
+            state: 'card-selecting',
+            cardBattle: null,
+          }
+        : {
+            gameMode: 'classic',
+            state: 'selecting',
+            cardBattle: null,
+          };
+    await update(ref(db, `rooms/${room.id}`), updates);
+  };
+
+  const setRegionFilter = async (region) => {
+    if (!room || !user || room.adminUid !== user.uid) return;
+    await update(ref(db, `rooms/${room.id}`), { regionFilter: region, cardBattle: null });
+  };
+
+  const setCardBestOf = async (val) => {
+    if (!room || !user || room.adminUid !== user.uid) return;
+    const parsed = Number(val);
+    const best = parsed === 5 ? 5 : 3;
+    await update(ref(db, `rooms/${room.id}`), { cardBestOf: best });
   };
 
   const takeTurn = async (move) => {
@@ -611,6 +734,114 @@ const BattlePage = () => {
     });
   };
 
+  const startCardRound = async () => {
+    if (!room || !pokemon.length) return;
+    const roomRef = ref(db, `rooms/${room.id}`);
+    await runTransaction(roomRef, (current) => {
+      if (!current) return current;
+      if (current.gameMode !== 'cards') return current;
+      const playerIds = Object.keys(current.players || {});
+      const round = (current.cardBattle?.round ?? 0) + 1;
+      const bestOf = current.cardBestOf ?? current.cardBattle?.maxRounds ?? 3;
+      if (round > bestOf && current.cardBattle?.matchWinner) return current;
+      const prevWinner = current.cardBattle?.winnerRound ?? null;
+      const chooserUid =
+        prevWinner && playerIds.includes(prevWinner)
+          ? prevWinner
+          : playerIds[Math.floor(Math.random() * Math.max(playerIds.length, 1))];
+      const hands = {};
+      playerIds.forEach((pid) => {
+        const rnd = getRandomPokemonByRegion(current.regionFilter || 'all');
+        if (rnd) hands[pid] = serializePokemon(rnd);
+      });
+      if (Object.keys(hands).length < 2) return current;
+      return {
+        ...current,
+        cardBattle: {
+          round,
+          maxRounds: bestOf,
+          region: current.regionFilter || 'all',
+          scores: current.cardBattle?.scores || {},
+          hands,
+          choices: {},
+          selectedStat: null,
+          chooserUid,
+          revealed: false,
+          winnerRound: null,
+          matchWinner: current.cardBattle?.matchWinner ?? null,
+        },
+      };
+    });
+  };
+
+  const pickCardStat = async (statKey) => {
+    if (!room || !user || room.gameMode !== 'cards') return;
+    const roomRef = ref(db, `rooms/${room.id}`);
+    await runTransaction(roomRef, (current) => {
+      if (!current?.cardBattle || current.cardBattle.matchWinner) return current;
+      const battle = current.cardBattle;
+      if (battle.revealed) return current;
+      if (battle.chooserUid && battle.chooserUid !== user.uid) return current;
+      const choices = { ...(battle.choices || {}) };
+      if (choices[user.uid] === statKey) {
+        delete choices[user.uid];
+        return {
+          ...current,
+          cardBattle: {
+            ...battle,
+            choices,
+            selectedStat: null,
+            revealed: false,
+            winnerRound: null,
+          },
+        };
+      }
+      choices[user.uid] = statKey;
+      const selectedStat = statKey;
+      let scores = { ...(battle.scores || {}) };
+      let revealed = battle.revealed;
+      let winnerRound = battle.winnerRound ?? null;
+      let matchWinner = battle.matchWinner ?? null;
+      if (selectedStat && !battle.revealed) {
+        const playerIds = Object.keys(current.players || {});
+        if (playerIds.length === 2) {
+          const [a, b] = playerIds;
+          const statA = getStatValue(battle.hands?.[a], selectedStat);
+          const statB = getStatValue(battle.hands?.[b], selectedStat);
+          if (statA > statB) {
+            scores[a] = (scores[a] || 0) + 1;
+            winnerRound = a;
+          } else if (statB > statA) {
+            scores[b] = (scores[b] || 0) + 1;
+            winnerRound = b;
+          } else {
+            winnerRound = null;
+          }
+          revealed = true;
+          const maxScore = Math.max(scores[a] || 0, scores[b] || 0);
+          const needed = Math.ceil((battle.maxRounds ?? 3) / 2);
+          if (maxScore >= needed || battle.round >= (battle.maxRounds ?? 3)) {
+            matchWinner =
+              (scores[a] || 0) === (scores[b] || 0) ? null : (scores[a] || 0) > (scores[b] || 0) ? a : b;
+          }
+        }
+      }
+      return {
+        ...current,
+        cardBattle: {
+          ...battle,
+          choices,
+          scores,
+          revealed,
+          winnerRound,
+          selectedStat,
+          matchWinner,
+          chooserUid: winnerRound ?? battle.chooserUid,
+        },
+      };
+    });
+  };
+
   const sendInvite = async (player) => {
     if (!user) {
       setShowLoginGate(true);
@@ -652,7 +883,7 @@ const BattlePage = () => {
       setOutgoingInvite({ id: inviteRef.key, targetUid: player.uid });
     } catch (err) {
       console.error('Error sending invite', err);
-      toast.error('Nao foi possivel enviar o convite.');
+      toast.error('Could not send the invite.');
     }
   };
 
@@ -668,6 +899,10 @@ const BattlePage = () => {
         createdAt: Date.now(),
         currentTurn: null,
         log: [],
+        gameMode: 'classic',
+        regionFilter: 'all',
+        cardBestOf: 3,
+        adminUid: invite.fromUid,
         players: {
           [user.uid]: {
             uid: user.uid,
@@ -690,7 +925,7 @@ const BattlePage = () => {
       toast.success('Invite accepted! Starting room...');
     } catch (err) {
       console.error('Error accepting invite', err);
-      toast.error('Nao foi possivel aceitar o convite.');
+      toast.error('Could not accept the invite.');
     }
   };
 
@@ -761,12 +996,12 @@ const BattlePage = () => {
     await update(ref(db, `rooms/${room.id}`), {
       rematchRequest: {
         fromUid: user.uid,
-        fromName: user.displayName ?? 'Treinador',
+        fromName: user.displayName ?? 'Trainer',
         status: 'pending',
         createdAt: Date.now(),
       },
     });
-    toast.success('Pedido de nova partida enviado.');
+    toast.success('Rematch request sent.');
   };
 
   const acceptRematch = async () => {
@@ -929,6 +1164,233 @@ const BattlePage = () => {
   const pveReady = Boolean(selectedLeft && selectedRight);
   const pveWinnerSide = pveBattle?.winner ?? null;
   const autoSimPve = battleMode === 'pve';
+  useEffect(() => {
+    const currentId = myCard?.id ?? null;
+    if (!currentId || prevHandRef.current === currentId) return;
+    prevHandRef.current = currentId;
+    setMyCardRevealStage('front');
+    setMyCardRolling(true);
+    const total = Math.floor(Math.random() * 6) + 3; // 3 to 8 swaps
+    let count = 0;
+    const rollFn = () => {
+      count += 1;
+      if (count >= total) {
+        setMyCardDisplay(myCard);
+        setMyCardRolling(false);
+        clearInterval(cardRollTimerRef.current);
+        cardRollTimerRef.current = null;
+      } else {
+        const pool = pokemon.length ? pokemon : [myCard];
+        const rnd = pool[Math.floor(Math.random() * pool.length)];
+        setMyCardDisplay(rnd);
+      }
+    };
+    rollFn();
+    cardRollTimerRef.current = setInterval(rollFn, 450);
+    return () => {
+      if (cardRollTimerRef.current) {
+        clearInterval(cardRollTimerRef.current);
+        cardRollTimerRef.current = null;
+      }
+    };
+  }, [myCard, pokemon]);
+  const cardStatOptions = [
+    { key: 'strength', label: 'Strength (HP)' },
+    { key: 'attack', label: 'Attack' },
+    { key: 'defense', label: 'Defense' },
+    { key: 'agility', label: 'Agility (Speed)' },
+  ];
+  const getCardPalette = (type) => {
+    const map = {
+      fire: { from: 'from-orange-500', to: 'to-red-600', ring: 'ring-orange-400' },
+      water: { from: 'from-sky-500', to: 'to-blue-700', ring: 'ring-sky-400' },
+      electric: { from: 'from-amber-300', to: 'to-yellow-500', ring: 'ring-amber-400' },
+      grass: { from: 'from-emerald-500', to: 'to-lime-600', ring: 'ring-emerald-400' },
+      psychic: { from: 'from-pink-500', to: 'to-purple-600', ring: 'ring-pink-400' },
+      ice: { from: 'from-cyan-300', to: 'to-blue-500', ring: 'ring-cyan-300' },
+      rock: { from: 'from-stone-400', to: 'to-amber-600', ring: 'ring-stone-400' },
+      ground: { from: 'from-amber-500', to: 'to-yellow-600', ring: 'ring-amber-500' },
+      dragon: { from: 'from-indigo-500', to: 'to-indigo-700', ring: 'ring-indigo-400' },
+      dark: { from: 'from-slate-700', to: 'to-gray-900', ring: 'ring-slate-500' },
+      fairy: { from: 'from-pink-300', to: 'to-rose-400', ring: 'ring-pink-300' },
+      steel: { from: 'from-gray-400', to: 'to-gray-600', ring: 'ring-gray-400' },
+      fighting: { from: 'from-orange-600', to: 'to-red-700', ring: 'ring-orange-500' },
+      ghost: { from: 'from-indigo-700', to: 'to-slate-800', ring: 'ring-indigo-500' },
+      bug: { from: 'from-lime-500', to: 'to-green-600', ring: 'ring-lime-400' },
+      poison: { from: 'from-purple-500', to: 'to-violet-600', ring: 'ring-purple-400' },
+      flying: { from: 'from-sky-400', to: 'to-indigo-500', ring: 'ring-sky-300' },
+      normal: { from: 'from-slate-500', to: 'to-slate-800', ring: 'ring-slate-500' },
+    };
+    return map[type] ?? map.normal;
+  };
+
+  const renderFrontTeaserCard = (poke) => {
+    if (!poke) return null;
+    const primaryType = poke.types?.[0]?.type?.name ?? 'normal';
+    return (
+      <div className="pokemon-card group relative">
+        <div
+          className="absolute inset-0 opacity-10 group-hover:opacity-20 transition-opacity rounded-xl"
+          style={{
+            background: `linear-gradient(135deg, hsl(var(--type-${primaryType})), hsl(var(--type-${primaryType}) / 0.5))`,
+          }}
+        />
+        <div className="relative p-4 flex flex-col h-full">
+          <div className="flex items-center justify-between mb-2 gap-2">
+            <div className="flex items-center gap-2 min-w-0 flex-1">
+              <Badge variant="secondary" className="text-xs font-bold whitespace-nowrap shrink-0">
+                #{String(poke.id).padStart(3, '0')}
+              </Badge>
+              <Badge className="text-[11px] font-semibold whitespace-nowrap shrink-0 bg-primary/10 text-primary border border-primary/20">
+                {formatPokemonName(primaryType)}
+              </Badge>
+            </div>
+          </div>
+          <div className="flex flex-col items-center justify-center flex-1">
+            <img
+              src={poke.sprites?.other?.['official-artwork']?.front_default ?? poke.sprites?.front_default}
+              alt={poke.name}
+              className="w-24 h-24 object-contain drop-shadow-lg"
+            />
+          </div>
+          <h3 className="text-lg font-bold capitalize text-center mb-2">{poke.name}</h3>
+          <div className="flex gap-1 justify-center flex-wrap">
+            {(poke.types ?? []).map((t) => (
+              <Badge key={t.type.name} variant="outline" className="text-xs capitalize">
+                {t.type.name}
+              </Badge>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const renderElmaCard = (poke, { hidden = false, reveal = false, selectedStat = null, onSelectStat = null } = {}) => {
+    if (!poke && hidden) {
+      return (
+        <div className="relative w-full max-w-[280px] mx-auto aspect-[3/4] rounded-2xl border-4 border-slate-400 bg-gradient-to-b from-slate-200 to-slate-400 shadow-lg flex items-center justify-center text-4xl font-extrabold text-slate-600">
+          ?
+        </div>
+      );
+    }
+    if (!poke) return null;
+    if (hidden && !reveal) {
+      return (
+        <div className="relative w-full max-w-[280px] mx-auto aspect-[3/4] rounded-2xl border-4 border-slate-400 bg-gradient-to-b from-slate-200 to-slate-400 shadow-lg flex items-center justify-center text-4xl font-extrabold text-slate-600">
+          ?
+        </div>
+      );
+    }
+    const primaryType = poke.types?.[0]?.type?.name ?? 'normal';
+    const palette = getCardPalette(primaryType);
+    const textureMap = {
+      fire: 'radial-gradient(circle at 20% 20%, rgba(255,140,66,0.25) 0, transparent 40%), radial-gradient(circle at 80% 0%, rgba(255,80,80,0.25) 0, transparent 42%)',
+      water: 'radial-gradient(circle at 20% 20%, rgba(90,180,255,0.25) 0, transparent 40%), radial-gradient(circle at 80% 0%, rgba(60,110,255,0.2) 0, transparent 42%)',
+      grass: 'radial-gradient(circle at 20% 20%, rgba(130,210,90,0.25) 0, transparent 40%), radial-gradient(circle at 80% 0%, rgba(80,180,80,0.25) 0, transparent 42%)',
+      electric: 'radial-gradient(circle at 20% 20%, rgba(255,230,120,0.3) 0, transparent 40%), radial-gradient(circle at 80% 0%, rgba(255,200,80,0.25) 0, transparent 42%)',
+      ground: 'radial-gradient(circle at 20% 20%, rgba(180,140,80,0.3) 0, transparent 40%), radial-gradient(circle at 80% 0%, rgba(140,100,60,0.25) 0, transparent 42%)',
+      rock: 'radial-gradient(circle at 20% 20%, rgba(150,130,90,0.3) 0, transparent 40%), radial-gradient(circle at 80% 0%, rgba(110,90,70,0.25) 0, transparent 42%)',
+      ice: 'radial-gradient(circle at 20% 20%, rgba(180,240,255,0.3) 0, transparent 40%), radial-gradient(circle at 80% 0%, rgba(130,210,255,0.25) 0, transparent 42%)',
+      psychic: 'radial-gradient(circle at 20% 20%, rgba(255,160,220,0.3) 0, transparent 40%), radial-gradient(circle at 80% 0%, rgba(190,120,240,0.25) 0, transparent 42%)',
+      dragon: 'radial-gradient(circle at 20% 20%, rgba(140,120,255,0.3) 0, transparent 40%), radial-gradient(circle at 80% 0%, rgba(90,80,220,0.25) 0, transparent 42%)',
+      dark: 'radial-gradient(circle at 20% 20%, rgba(40,40,60,0.35) 0, transparent 40%), radial-gradient(circle at 80% 0%, rgba(20,20,30,0.25) 0, transparent 42%)',
+      steel: 'radial-gradient(circle at 20% 20%, rgba(180,190,200,0.3) 0, transparent 40%), radial-gradient(circle at 80% 0%, rgba(130,140,150,0.25) 0, transparent 42%)',
+      ghost: 'radial-gradient(circle at 20% 20%, rgba(100,90,180,0.3) 0, transparent 40%), radial-gradient(circle at 80% 0%, rgba(70,60,150,0.25) 0, transparent 42%)',
+      bug: 'radial-gradient(circle at 20% 20%, rgba(180,220,90,0.3) 0, transparent 40%), radial-gradient(circle at 80% 0%, rgba(140,190,80,0.25) 0, transparent 42%)',
+      poison: 'radial-gradient(circle at 20% 20%, rgba(180,110,220,0.3) 0, transparent 40%), radial-gradient(circle at 80% 0%, rgba(140,90,200,0.25) 0, transparent 42%)',
+      flying: 'radial-gradient(circle at 20% 20%, rgba(140,190,255,0.3) 0, transparent 40%), radial-gradient(circle at 80% 0%, rgba(110,150,230,0.25) 0, transparent 42%)',
+      fighting: 'radial-gradient(circle at 20% 20%, rgba(230,120,80,0.3) 0, transparent 40%), radial-gradient(circle at 80% 0%, rgba(190,70,60,0.25) 0, transparent 42%)',
+      fairy: 'radial-gradient(circle at 20% 20%, rgba(255,200,230,0.3) 0, transparent 40%), radial-gradient(circle at 80% 0%, rgba(240,160,210,0.25) 0, transparent 42%)',
+      normal: 'radial-gradient(circle at 20% 20%, rgba(190,200,210,0.25) 0, transparent 40%), radial-gradient(circle at 80% 0%, rgba(160,170,180,0.2) 0, transparent 42%)',
+    };
+    const emblemMap = {
+      fire: 'FIRE',
+      water: 'WATER',
+      grass: 'GRASS',
+      electric: 'ELEC',
+      ground: 'GROUND',
+      rock: 'ROCK',
+      ice: 'ICE',
+      psychic: 'PSY',
+      dragon: 'DRGN',
+      dark: 'DARK',
+      steel: 'STEEL',
+      ghost: 'GHOST',
+      bug: 'BUG',
+      poison: 'POISON',
+      flying: 'FLY',
+      fighting: 'FIGHT',
+      fairy: 'FAIRY',
+      normal: 'NORMAL',
+    };
+    const sprite =
+      poke.sprites?.front_default ??
+      poke.sprites?.other?.['official-artwork']?.front_default ??
+      poke.sprites?.front_shiny;
+    const stats = {
+      strength: getStatValue(poke, 'strength'),
+      attack: getStatValue(poke, 'attack'),
+      defense: getStatValue(poke, 'defense'),
+      agility: getStatValue(poke, 'agility'),
+    };
+    return (
+      <div
+        className={`relative w-full max-w-[280px] mx-auto aspect-[3/4] rounded-2xl border-4 bg-gradient-to-b ${palette.from} ${palette.to} shadow-[0_10px_35px_rgba(0,0,0,0.35)] ring-4 ${palette.ring} overflow-hidden flex`}
+        style={{ backgroundImage: textureMap[primaryType] ?? textureMap.normal }}
+      >
+        <div
+          className="absolute left-0 top-0 bottom-0 w-10 bg-black/70 text-white text-sm font-bold flex items-center justify-center tracking-wider"
+          style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}
+        >
+          #{poke.id} - {formatPokemonName(poke.name)}
+        </div>
+        <div className="flex-1 pl-10 pr-3 py-3 flex flex-col gap-3">
+          <div className="absolute right-2 top-2 text-xs font-bold tracking-wide opacity-80 drop-shadow-sm bg-black/30 text-white px-2 py-1 rounded">
+            {emblemMap[primaryType] ?? 'STAR'}
+          </div>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              {sprite && (
+                <img src={sprite} alt={poke.name} className="w-24 h-24 object-contain drop-shadow-lg" />
+              )}
+              <div className="text-sm font-semibold uppercase bg-white/30 text-black px-2 py-1 rounded-md backdrop-blur w-fit">
+                {primaryType}
+              </div>
+            </div>
+            <div className="text-[10px] font-semibold text-white/80">Lv 100</div>
+          </div>
+          <div className="space-y-2 text-sm font-semibold mt-2">
+            {cardStatOptions.map((opt) => {
+              const value = reveal || !hidden ? stats[opt.key] : '?';
+              const color =
+                opt.key === 'strength'
+                  ? 'text-amber-100'
+                  : opt.key === 'attack'
+                  ? 'text-red-100'
+                  : opt.key === 'defense'
+                  ? 'text-emerald-100'
+                  : 'text-yellow-100';
+              const isSelected = selectedStat === opt.key;
+              const selectable = Boolean(onSelectStat);
+              return (
+                <div
+                  key={opt.key}
+                  className={`flex items-center justify-between bg-black/25 rounded-lg px-3 py-2 border shadow-inner transition ${
+                    isSelected ? 'border-white ring-2 ring-white/70' : 'border-white/10'
+                  } ${selectable ? 'cursor-pointer hover:bg-black/35' : ''}`}
+                  onClick={() => selectable && onSelectStat(opt.key)}
+                >
+                  <span className={`${color} drop-shadow-sm uppercase`}>{opt.label.replace(' (HP)', '')}</span>
+                  <span className="text-white text-base tracking-tight">{value}</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div className="min-h-screen bg-background">
@@ -1416,7 +1878,172 @@ const BattlePage = () => {
                     </div>
                   </div>
 
-                  {room?.state === 'selecting' ? (
+                  <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
+                    {room.adminUid === user?.uid && (
+                      <>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-muted-foreground">Game mode:</span>
+                          <select
+                            className="border rounded-md px-2 py-1 text-sm bg-background"
+                            value={room.gameMode ?? 'classic'}
+                            onChange={(e) => setGameMode(e.target.value)}
+                          >
+                            <option value="classic">Classic</option>
+                            <option value="cards">Elma Chips Cards</option>
+                          </select>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-muted-foreground">Region:</span>
+                          <select
+                            className="border rounded-md px-2 py-1 text-sm bg-background"
+                            value={room.regionFilter ?? 'all'}
+                            onChange={(e) => setRegionFilter(e.target.value)}
+                          >
+                            <option value="all">All</option>
+                            <option value="kanto">Kanto</option>
+                            <option value="johto">Johto</option>
+                            <option value="hoenn">Hoenn</option>
+                            <option value="sinnoh">Sinnoh</option>
+                            <option value="unova">Unova</option>
+                            <option value="kalos">Kalos</option>
+                            <option value="alola">Alola</option>
+                            <option value="galar">Galar</option>
+                            <option value="paldea">Paldea</option>
+                          </select>
+                        </div>
+                        {room.gameMode === 'cards' && (
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs text-muted-foreground">Best of:</span>
+                            <select
+                              className="border rounded-md px-2 py-1 text-sm bg-background"
+                              value={room.cardBestOf ?? 3}
+                              onChange={(e) => setCardBestOf(e.target.value)}
+                            >
+                              <option value="3">3</option>
+                              <option value="5">5</option>
+                            </select>
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </div>
+
+                  {room?.gameMode === 'cards' ? (
+                    <div className="space-y-4">
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div className="flex flex-col sm:flex-row sm:items-center sm:gap-3">
+                          <div className="text-sm text-muted-foreground">Elma Chips Promo Cards - Best of {cardMaxRounds}</div>
+                          <div className="text-lg font-semibold">
+                            Round {Math.max(cardRound || 1, 1)} / {cardMaxRounds}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2 text-sm sm:text-base">
+                          <Badge variant="secondary" className="bg-primary/10 text-primary border-primary/30 text-sm sm:text-base">
+                            {selfName}: {cardScores[user?.uid] ?? 0}
+                          </Badge>
+                          <Badge variant="outline" className="text-sm sm:text-base">
+                            {opponentName}: {cardScores[opponentId] ?? 0}
+                          </Badge>
+                          {cardMatchWinner && (
+                            <Badge className="bg-emerald-100 text-emerald-800 border-emerald-200">
+                              {cardMatchWinner === user?.uid ? 'Match Winner: You' : 'Match Winner: Opponent'}
+                            </Badge>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="flex flex-wrap gap-2 items-center">
+                        <Button
+                          className="gap-2"
+                          onClick={startCardRound}
+                          disabled={
+                            room.adminUid !== user?.uid ||
+                            cardMatchWinner ||
+                            (cardBattle?.hands && !cardRevealed)
+                          }
+                        >
+                          <Sparkles className="h-4 w-4" />
+                          {cardRound ? 'Next round' : 'Start match'}
+                        </Button>
+                        <span className="text-xs text-muted-foreground">
+                          Admin deals a round. Chooser taps one attribute to reveal. Winner keeps choosing.
+                        </span>
+                        <Badge variant="outline" className="ml-auto text-[11px]">
+                          {cardChooserName}
+                        </Badge>
+                      </div>
+
+                      <div className="space-y-3">
+                        <div className="text-xs text-muted-foreground text-center sm:text-left">
+                          Opponent: {opponentName} · {chooserUid === opponentId ? 'Choosing' : 'Waiting'} · Card reveals in modal.
+                        </div>
+
+                        <div className="bg-muted/40 border rounded-xl p-3 space-y-3">
+                          <div className="flex items-center justify-between">
+                            <div className="font-semibold truncate">{selfName}</div>
+                            <Badge
+                              variant="secondary"
+                              className={
+                                cardRevealed
+                                  ? 'bg-emerald-100 text-emerald-800'
+                                  : chooserUid === user?.uid
+                                  ? 'bg-amber-100 text-amber-800'
+                                  : 'bg-slate-100 text-slate-800'
+                              }
+                            >
+                              {cardRevealed ? 'Revealed' : chooserUid === user?.uid ? 'You choose' : 'Waiting'}
+                            </Badge>
+                          </div>
+
+                          {myCard ? (
+                            <>
+                              <div className="max-w-[280px] w-full mx-auto">
+                                {myCardRevealStage === 'front' ? (
+                                  <button
+                                    type="button"
+                                    onClick={handleRevealBack}
+                                    className="w-full transition duration-700 ease-out"
+                                    disabled={myCardRolling}
+                                  >
+                                    <div
+                                      className={`transition transform duration-700 ${
+                                        myCardRolling ? 'opacity-80' : 'hover:scale-[1.02]'
+                                      }`}
+                                    >
+                                      {renderFrontTeaserCard(myCardDisplay ?? myCard)}
+                                    </div>
+                                  </button>
+                                ) : (
+                                  renderElmaCard(myCard, {
+                                    hidden: false,
+                                    reveal: cardRevealed,
+                                    selectedStat: myCardChoice,
+                                    onSelectStat: cardRevealed || chooserUid !== user?.uid ? null : pickCardStat,
+                                  })
+                                )}
+                              </div>
+                              {!cardRevealed && !myCardChoice && (
+                                <div className="text-xs text-muted-foreground text-center">
+                                  {chooserUid === user?.uid
+                                    ? 'Tap a stat on the card to pick your attribute.'
+                                    : 'Waiting for the chooser to select an attribute.'}
+                                </div>
+                              )}
+                            </>
+                          ) : (
+                            <div className="text-sm text-muted-foreground">Waiting for the admin to start the round.</div>
+                          )}
+                        </div>
+
+                        <div className="text-sm text-muted-foreground text-center">
+                          Opponent card will reveal in the result modal.
+                        </div>
+                      </div>
+
+                                            {/* Round result handled via modal */}
+
+                    </div>
+                  ) : room?.state === 'selecting' ? (
                     <div className="space-y-4">
                         <div className="flex flex-row items-center justify-between bg-muted/30 border rounded-xl p-3 md:p-4 gap-2 sm:gap-3">
                           <div className="font-semibold text-sm md:text-base truncate">{opponentPlayer?.name ?? 'Opponent'}</div>
@@ -1443,7 +2070,7 @@ const BattlePage = () => {
                             <div className="font-semibold text-xs md:text-base">
                               {selfPlayer?.name ?? user?.displayName ?? 'You'}
                             </div>
-                            <Badge variant="secondary">{selfPlayer?.ready ? 'Pronto' : 'Escolhendo'}</Badge>
+                            <Badge variant="secondary">{selfPlayer?.ready ? 'Ready' : 'Choosing'}</Badge>
                           </div>
 
                           {!selfPlayer?.pokemon ? (
@@ -1451,7 +2078,7 @@ const BattlePage = () => {
                               <div className="relative">
                                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
                                 <Input
-                                  placeholder="Buscar seu PokAcmon..."
+                                  placeholder="Search your Pokemon..."
                                   value={pvpSearch}
                                   onChange={(e) => setPvpSearch(e.target.value)}
                                   className="pl-10"
@@ -1646,9 +2273,9 @@ const BattlePage = () => {
                       {room?.log?.length > 0 && (
                         <div className="bg-muted/30 border rounded-xl p-3 space-y-2">
                           <div className="flex items-center justify-between">
-                            <div className="font-semibold">Ultimas jogadas</div>
+                            <div className="font-semibold">Latest plays</div>
                             <Button variant="ghost" size="sm" onClick={() => setShowLog((v) => !v)}>
-                              {showLog ? 'Recolher' : 'Expandir'}
+                              {showLog ? 'Collapse' : 'Expand'}
                             </Button>
                           </div>
                           {showLog && (
@@ -1674,14 +2301,14 @@ const BattlePage = () => {
                 </div>
               ) : (
                 <div className="bg-card border rounded-xl p-6 text-center space-y-3">
-                  <div className="text-lg font-semibold">Procure um desafiante</div>
+                  <div className="text-lg font-semibold">Find a challenger</div>
                   <p className="text-muted-foreground text-sm">
-                    Clique em Player vs Player para abrir a lista de jogadores online e enviar um convite.
+                    Click Player vs Player to open the online list and send an invite.
                   </p>
                   <div className="flex justify-center gap-2">
                     <Button onClick={() => (user ? setShowPlayersModal(true) : setShowLoginGate(true))} className="gap-2">
                       <Users className="h-4 w-4" />
-                      Abrir lista de jogadores
+                      Open player list
                     </Button>
                   </div>
                 </div>
@@ -1706,7 +2333,7 @@ const BattlePage = () => {
                       setShowLoginGate(false);
                     } catch (err) {
                       console.error('Login error', err);
-                      toast.error('Nao foi possivel fazer login agora.');
+                      toast.error('Could not sign in right now.');
                     }
                   }}
                 >
@@ -1749,6 +2376,68 @@ const BattlePage = () => {
                     </Button>
                   </div>
                 ))}
+              </div>
+            </DialogContent>
+          </Dialog>
+
+          <Dialog open={Boolean(cardResultModal)} onOpenChange={(open) => !open && setCardResultModal(null)}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>
+                  {cardResultModal?.outcome === 'win'
+                    ? 'You Win!'
+                    : cardResultModal?.outcome === 'lose'
+                    ? 'You Lose'
+                    : "It's a tie"}
+                </DialogTitle>
+                <DialogDescription>
+                  {cardResultModal
+                    ? cardModalStage === 'front'
+                      ? 'Opponent card revealed...'
+                      : cardModalStage === 'back'
+                      ? 'Comparing attributes...'
+                      : cardResultModal.outcome === 'win'
+                      ? `Your ${cardResultModal.stat} (${cardResultModal.myVal}) beat the opponent (${cardResultModal.oppVal}).`
+                      : cardResultModal.outcome === 'lose'
+                      ? `Opponent's ${cardResultModal.stat} (${cardResultModal.oppVal}) beat yours (${cardResultModal.myVal}).`
+                      : `Both ${cardResultModal.stat} values are ${cardResultModal.myVal}.`
+                    : ''}
+                </DialogDescription>
+              </DialogHeader>
+              {cardResultModal && (
+                <div className="space-y-3">
+                  <div className="relative w-full flex justify-center">
+                    {cardModalStage === 'front' && cardResultModal.oppCardSnapshot && (
+                      <div
+                        className="transition duration-700 ease-out opacity-100 translate-y-0"
+                        style={{ transitionDelay: '150ms' }}
+                      >
+                        <PokemonCard pokemon={cardResultModal.oppCardSnapshot} />
+                      </div>
+                    )}
+                    {cardModalStage !== 'front' && cardResultModal.oppCardSnapshot && (
+                      <div
+                        className="transition duration-700 ease-in-out opacity-100 translate-x-0"
+                        style={{ transitionDelay: '200ms' }}
+                      >
+                        {renderElmaCard(cardResultModal.oppCardSnapshot, {
+                          hidden: false,
+                          reveal: true,
+                          selectedStat: cardResultModal.stat,
+                          onSelectStat: null,
+                        })}
+                      </div>
+                    )}
+                  </div>
+                  {cardModalStage === 'result' && (
+                    <div className="text-sm text-center text-muted-foreground">
+                      Attribute: {cardResultModal.stat} - You {cardResultModal.outcome === 'win' ? 'win' : cardResultModal.outcome === 'lose' ? 'lose' : 'tie'} ({cardResultModal.myVal} vs {cardResultModal.oppVal})
+                    </div>
+                  )}
+                </div>
+              )}
+              <div className="flex justify-end">
+                <Button onClick={() => setCardResultModal(null)}>Close</Button>
               </div>
             </DialogContent>
           </Dialog>
