@@ -1227,36 +1227,32 @@ const BattlePage = () => {
   const renderFrontTeaserCard = (poke) => {
     if (!poke) return null;
     const primaryType = poke.types?.[0]?.type?.name ?? 'normal';
+    const palette = getCardPalette(primaryType);
     return (
-      <div className="pokemon-card group relative">
-        <div
-          className="absolute inset-0 opacity-10 group-hover:opacity-20 transition-opacity rounded-xl"
-          style={{
-            background: `linear-gradient(135deg, hsl(var(--type-${primaryType})), hsl(var(--type-${primaryType}) / 0.5))`,
-          }}
-        />
-        <div className="relative p-4 flex flex-col h-full">
-          <div className="flex items-center justify-between mb-2 gap-2">
-            <div className="flex items-center gap-2 min-w-0 flex-1">
-              <Badge variant="secondary" className="text-xs font-bold whitespace-nowrap shrink-0">
-                #{String(poke.id).padStart(3, '0')}
-              </Badge>
-              <Badge className="text-[11px] font-semibold whitespace-nowrap shrink-0 bg-primary/10 text-primary border border-primary/20">
-                {formatPokemonName(primaryType)}
-              </Badge>
+      <div
+        className={`relative w-full max-w-[280px] mx-auto aspect-[3/4] rounded-2xl border-4 bg-gradient-to-b ${palette.from} ${palette.to} shadow-[0_10px_35px_rgba(0,0,0,0.35)] ring-4 ${palette.ring} overflow-hidden flex`}
+        style={{ backgroundImage: `radial-gradient(circle at 30% 20%, rgba(255,255,255,0.15) 0, transparent 38%)` }}
+      >
+        <div className="absolute inset-0 bg-black/10" />
+        <div className="flex-1 p-4 flex flex-col gap-4">
+          <div className="flex items-center justify-between">
+            <Badge variant="secondary" className="text-xs font-bold bg-white/90 text-black">
+              #{String(poke.id).padStart(3, '0')}
+            </Badge>
+            <div className="text-base sm:text-lg font-bold text-white drop-shadow-sm capitalize">
+              {formatPokemonName(poke.name)}
             </div>
           </div>
           <div className="flex flex-col items-center justify-center flex-1">
             <img
               src={poke.sprites?.other?.['official-artwork']?.front_default ?? poke.sprites?.front_default}
               alt={poke.name}
-              className="w-24 h-24 object-contain drop-shadow-lg"
+              className="w-36 h-36 object-contain drop-shadow-[0_8px_24px_rgba(0,0,0,0.5)]"
             />
           </div>
-          <h3 className="text-lg font-bold capitalize text-center mb-2">{poke.name}</h3>
-          <div className="flex gap-1 justify-center flex-wrap">
+          <div className="flex gap-2 justify-center flex-wrap">
             {(poke.types ?? []).map((t) => (
-              <Badge key={t.type.name} variant="outline" className="text-xs capitalize">
+              <Badge key={t.type.name} variant="outline" className="text-xs capitalize bg-white/18 border-white/30 text-white">
                 {t.type.name}
               </Badge>
             ))}
@@ -1335,12 +1331,12 @@ const BattlePage = () => {
       agility: getStatValue(poke, 'agility'),
     };
     return (
-      <div
-        className={`relative w-full max-w-[280px] mx-auto aspect-[3/4] rounded-2xl border-4 bg-gradient-to-b ${palette.from} ${palette.to} shadow-[0_10px_35px_rgba(0,0,0,0.35)] ring-4 ${palette.ring} overflow-hidden flex`}
-        style={{ backgroundImage: textureMap[primaryType] ?? textureMap.normal }}
-      >
         <div
-          className="absolute left-0 top-0 bottom-0 w-10 bg-black/70 text-white text-sm font-bold flex items-center justify-center tracking-wider"
+          className={`relative w-full max-w-[280px] mx-auto aspect-[3/4] rounded-2xl border-4 bg-gradient-to-b ${palette.from} ${palette.to} shadow-[0_10px_35px_rgba(0,0,0,0.35)] ring-4 ${palette.ring} overflow-hidden flex`}
+          style={{ backgroundImage: textureMap[primaryType] ?? textureMap.normal }}
+        >
+        <div
+          className="absolute left-0 top-0 text-lg bottom-0 w-10 bg-black/70 text-white text-base font-bold flex items-center justify-center tracking-wider"
           style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}
         >
           #{poke.id} - {formatPokemonName(poke.name)}
@@ -1348,41 +1344,40 @@ const BattlePage = () => {
         <div className="flex-1 pl-10 pr-3 py-3 flex flex-col gap-3">
           <div className="absolute right-2 top-2 text-xs font-bold tracking-wide opacity-80 drop-shadow-sm bg-black/30 text-white px-2 py-1 rounded">
             {emblemMap[primaryType] ?? 'STAR'}
+            <div className="flex flex-col items-end gap-1">
+              <div className="text-[10px] font-semibold text-white/80">Lv 100</div>
+            </div>
           </div>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               {sprite && (
-                <img src={sprite} alt={poke.name} className="w-24 h-24 object-contain drop-shadow-lg" />
+                <img src={sprite} alt={poke.name} className="w-28 h-28 object-contain drop-shadow-lg" />
               )}
-              <div className="text-sm font-semibold uppercase bg-white/30 text-black px-2 py-1 rounded-md backdrop-blur w-fit">
-                {primaryType}
-              </div>
             </div>
-            <div className="text-[10px] font-semibold text-white/80">Lv 100</div>
           </div>
-          <div className="space-y-2 text-sm font-semibold mt-2">
+          <div className="space-y-2 text-sm font-semibold mt-1 px-1">
             {cardStatOptions.map((opt) => {
               const value = reveal || !hidden ? stats[opt.key] : '?';
               const color =
                 opt.key === 'strength'
-                  ? 'text-amber-100'
+                  ? 'text-amber-100 font-bold'
                   : opt.key === 'attack'
-                  ? 'text-red-100'
+                  ? 'text-red-100 font-bold'
                   : opt.key === 'defense'
-                  ? 'text-emerald-100'
-                  : 'text-yellow-100';
+                  ? 'text-emerald-100 font-bold'
+                  : 'text-yellow-100 font-bold';
               const isSelected = selectedStat === opt.key;
               const selectable = Boolean(onSelectStat);
               return (
                 <div
                   key={opt.key}
-                  className={`flex items-center justify-between bg-black/25 rounded-lg px-3 py-2 border shadow-inner transition ${
-                    isSelected ? 'border-white ring-2 ring-white/70' : 'border-white/10'
-                  } ${selectable ? 'cursor-pointer hover:bg-black/35' : ''}`}
+                  className={`flex items-center justify-between rounded-lg px-3 py-2 border shadow-inner transition bg-gradient-to-r from-black/35 to-black/10 ${
+                    isSelected ? 'border-white ring-2 ring-white/70 shadow-[0_0_20px_rgba(255,255,255,0.25)]' : 'border-white/10'
+                  } ${selectable ? 'cursor-pointer hover:from-black/45 hover:to-black/20' : ''}`}
                   onClick={() => selectable && onSelectStat(opt.key)}
                 >
                   <span className={`${color} drop-shadow-sm uppercase`}>{opt.label.replace(' (HP)', '')}</span>
-                  <span className="text-white text-base tracking-tight">{value}</span>
+                  <span className="text-white text-base tracking-tight font-bold">{value}</span>
                 </div>
               );
             })}
@@ -1973,7 +1968,7 @@ const BattlePage = () => {
                         </Badge>
                       </div>
 
-                      <div className="space-y-3">
+                      <div className="rounded-2xl border bg-gradient-to-br from-slate-900/10 via-slate-800/5 to-slate-900/10 p-3 sm:p-4 space-y-4 shadow-[0_12px_40px_rgba(0,0,0,0.15)]">
                         <div className="text-xs text-muted-foreground text-center sm:text-left">
                           Opponent: {opponentName} · {chooserUid === opponentId ? 'Choosing' : 'Waiting'} · Card reveals in modal.
                         </div>
@@ -2317,7 +2312,7 @@ const BattlePage = () => {
           )}
 
           <Dialog open={showLoginGate} onOpenChange={setShowLoginGate}>
-            <DialogContent>
+            <DialogContent className="max-w-[420px] sm:max-w-[520px]">
               <DialogHeader>
                 <DialogTitle>Sign in with Google</DialogTitle>
                 <DialogDescription>
@@ -2407,27 +2402,29 @@ const BattlePage = () => {
               {cardResultModal && (
                 <div className="space-y-3">
                   <div className="relative w-full flex justify-center">
-                    {cardModalStage === 'front' && cardResultModal.oppCardSnapshot && (
-                      <div
-                        className="transition duration-700 ease-out opacity-100 translate-y-0"
-                        style={{ transitionDelay: '150ms' }}
-                      >
-                        <PokemonCard pokemon={cardResultModal.oppCardSnapshot} />
-                      </div>
-                    )}
-                    {cardModalStage !== 'front' && cardResultModal.oppCardSnapshot && (
-                      <div
-                        className="transition duration-700 ease-in-out opacity-100 translate-x-0"
-                        style={{ transitionDelay: '200ms' }}
-                      >
-                        {renderElmaCard(cardResultModal.oppCardSnapshot, {
-                          hidden: false,
-                          reveal: true,
-                          selectedStat: cardResultModal.stat,
-                          onSelectStat: null,
-                        })}
-                      </div>
-                    )}
+                    <div className="w-full max-w-[320px]">
+                      {cardModalStage === 'front' && cardResultModal.oppCardSnapshot && (
+                        <div
+                          className="transition duration-700 ease-out opacity-100 translate-y-0"
+                          style={{ transitionDelay: '150ms' }}
+                        >
+                          {renderFrontTeaserCard(cardResultModal.oppCardSnapshot)}
+                        </div>
+                      )}
+                      {cardModalStage !== 'front' && cardResultModal.oppCardSnapshot && (
+                        <div
+                          className="transition duration-700 ease-in-out opacity-100 translate-x-0"
+                          style={{ transitionDelay: '200ms' }}
+                        >
+                          {renderElmaCard(cardResultModal.oppCardSnapshot, {
+                            hidden: false,
+                            reveal: true,
+                            selectedStat: cardResultModal.stat,
+                            onSelectStat: null,
+                          })}
+                        </div>
+                      )}
+                    </div>
                   </div>
                   {cardModalStage === 'result' && (
                     <div className="text-sm text-center text-muted-foreground">
