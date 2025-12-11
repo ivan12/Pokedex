@@ -142,7 +142,7 @@ const HomePage = () => {
                 className="pl-12 h-14 text-base rounded-2xl border-2 focus-visible:ring-2 focus-visible:ring-accent"
               />
             </div>
-            <ImageSearch onPokemonFound={handlePokemonFound} />
+            <ImageSearch onPokemonFound={handlePokemonFound} pokemonList={pokemon} />
           </div>
           
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
