@@ -1,4 +1,4 @@
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { Heart } from 'lucide-react';
 import TypeBadge from '@/components/TypeBadge';
 import { Badge } from '@/components/ui/badge';
@@ -39,6 +39,7 @@ const getGenerationBadgeClass = (label) => {
 
 export const PokemonCard = ({ pokemon }) => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { isFavorite, toggleFavorite } = useFavorites();
   const primaryType = pokemon.types[0].type.name;
   const generationLabel = getGenerationLabel(pokemon.id);
@@ -46,7 +47,11 @@ export const PokemonCard = ({ pokemon }) => {
 
   return (
     <div
-      onClick={() => navigate(`/pokemon/${pokemon.id}`)}
+      onClick={() =>
+        navigate(`/pokemon/${pokemon.id}`, {
+          state: { from: `${location.pathname}${location.search}` },
+        })
+      }
       className="pokemon-card group"
     >
       {/* Background with type color */}

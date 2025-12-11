@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { ArrowLeft, Ruler, Weight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -11,6 +11,7 @@ import Header from '@/components/Header';
 const PokemonDetailPage = () => {
   const { id } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const [pokemon, setPokemon] = useState(null);
   const [species, setSpecies] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -65,11 +66,16 @@ const PokemonDetailPage = () => {
           {/* Back Button */}
           <Button
             variant="ghost"
-            onClick={() => navigate('/')}
+            onClick={() => {
+              const from = location.state?.from;
+              if (from) return navigate(from);
+              if (window.history.length > 1) return navigate(-1);
+              return navigate('/');
+            }}
             className="mb-6 hover:bg-accent/10"
           >
             <ArrowLeft className="mr-2 h-4 w-4" />
-            Back to Pokédex
+            Back
           </Button>
           
           {/* Main Card */}
