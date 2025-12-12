@@ -420,6 +420,7 @@ const BattlePage = () => {
     pveTimersRef.current.push(id);
   };
 
+  const [nowTs, setNowTs] = useState(Date.now());
   const opponentId = useMemo(() => {
     if (!room?.players) return null;
     return Object.keys(room.players).find((pid) => pid !== user?.uid) ?? null;
@@ -428,6 +429,7 @@ const BattlePage = () => {
   const cardStageTimerRef = useRef([]);
   const cardRollTimerRef = useRef(null);
   const prevHandRef = useRef(null);
+  const prevCardRoundRef = useRef(0);
 
   const resetSessionState = () => {
     setOutgoingInvite(null);
@@ -459,6 +461,9 @@ const BattlePage = () => {
   const cardBattle = room?.cardBattle ?? null;
   const cardRound = cardBattle?.round ?? 0;
   const cardMaxRounds = cardBattle?.maxRounds ?? room?.cardBestOf ?? 3;
+  const outgoingInviteSecondsLeft = outgoingInvite
+    ? Math.max(0, 60 - Math.floor((nowTs - (outgoingInvite.createdAt ?? nowTs)) / 1000))
+    : 0;
   const cardScores = cardBattle?.scores ?? {};
   const cardRevealed = Boolean(cardBattle?.revealed);
   const cardMatchWinner = cardBattle?.matchWinner ?? null;
@@ -471,7 +476,6 @@ const BattlePage = () => {
   const oppCardChoice = selectedStat && chooserUid === opponentId ? selectedStat : null;
   const cardChooserName =
     chooserUid === user?.uid ? 'You choose this round' : chooserUid === opponentId ? `${opponentName} chooses` : 'Random chooser';
-  const [nowTs, setNowTs] = useState(Date.now());
   const decliningRef = useRef(new Set());
   const [showLog, setShowLog] = useState(false);
 
@@ -518,6 +522,13 @@ const BattlePage = () => {
       cardStageTimerRef.current = [];
     };
   }, [cardResultModal]);
+  useEffect(() => {
+    if (cardBattle?.round !== prevCardRoundRef.current) {
+      setCardResultModal(null);
+      setCardModalStage('front');
+      prevCardRoundRef.current = cardBattle?.round ?? 0;
+    }
+  }, [cardBattle?.round]);
   const handleRevealBack = () => {
     if (myCardRolling) return;
     setMyCardRevealStage('back');
@@ -561,9 +572,17 @@ const BattlePage = () => {
       winnerMaxHP,
       battleLog: pveBattle.log ?? [],
     });
+    // clear selections after capturing the result so the result card stands out
+    setSelectedLeft(null);
+    setSelectedRight(null);
+    setSearchLeft('');
+    setSearchRight('');
+    setFilteredLeft([]);
+    setFilteredRight([]);
   }, [pveBattle, selectedLeft, selectedRight]);
   const selectLeft = (p) => {
     resetPveBattle();
+    setBattleResult(null);
     setSelectedLeft(p);
     setSearchLeft('');
     setFilteredLeft([]);
@@ -571,6 +590,7 @@ const BattlePage = () => {
 
   const selectRight = (p) => {
     resetPveBattle();
+    setBattleResult(null);
     setSelectedRight(p);
     setSearchRight('');
     setFilteredRight([]);
@@ -736,6 +756,8 @@ const BattlePage = () => {
 
   const startCardRound = async () => {
     if (!room || !pokemon.length) return;
+    setCardResultModal(null);
+    setCardModalStage('front');
     const roomRef = ref(db, `rooms/${room.id}`);
     await runTransaction(roomRef, (current) => {
       if (!current) return current;
@@ -847,6 +869,10 @@ const BattlePage = () => {
       setShowLoginGate(true);
       return;
     }
+    if (outgoingInvite && nowTs - (outgoingInvite.createdAt ?? 0) < 60000) {
+      toast.info('You already have a pending invite. Wait or cancel it first.');
+      return;
+    }
     try {
       const inviteRef = push(ref(db, `invites/${player.uid}`));
       if (player.status === 'battle') {
@@ -869,6 +895,7 @@ const BattlePage = () => {
           toast.success(`${player.name ?? 'Player'} accepted the invite!`);
           setActiveRoomId(data.roomId);
           setShowPlayersModal(false);
+          setOutgoingInvite(null);
           inviteWatcher?.();
           setInviteWatcher(null);
         }
@@ -880,11 +907,28 @@ const BattlePage = () => {
         }
       });
       setInviteWatcher(() => watcher);
-      setOutgoingInvite({ id: inviteRef.key, targetUid: player.uid });
+      setOutgoingInvite({
+        id: inviteRef.key,
+        targetUid: player.uid,
+        targetName: player.name ?? 'Player',
+        createdAt: Date.now(),
+      });
     } catch (err) {
       console.error('Error sending invite', err);
       toast.error('Could not send the invite.');
     }
+  };
+
+  const cancelOutgoingInvite = async () => {
+    if (!outgoingInvite) return;
+    try {
+      await remove(ref(db, `invites/${outgoingInvite.targetUid}/${outgoingInvite.id}`));
+    } catch (err) {
+      console.error('Error cancelling invite', err);
+    }
+    inviteWatcher?.();
+    setInviteWatcher(null);
+    setOutgoingInvite(null);
   };
 
   const acceptInvite = async (invite) => {
@@ -977,6 +1021,7 @@ const BattlePage = () => {
       winnerUid: null,
       log: [],
       rematchRequest: null,
+      cardBattle: null,
     };
     Object.keys(room.players || {}).forEach((pid) => {
       updates[`players/${pid}/pokemon`] = null;
@@ -1200,6 +1245,14 @@ const BattlePage = () => {
     { key: 'defense', label: 'Defense' },
     { key: 'agility', label: 'Agility (Speed)' },
   ];
+  const SPECIAL_IDS = new Set([
+    144, 145, 146, 150, 151, 243, 244, 245, 249, 250, 251, 377, 378, 379, 380, 381, 382, 383, 384, 385, 386, 480, 481, 482, 483, 484, 485, 486, 487, 488, 489, 490, 491, 492, 493, 638, 639, 640, 641, 642, 643, 644, 645, 646, 647, 648, 649, 716, 717, 718, 719, 720, 721, 785, 786, 787, 788, 791, 792, 800, 888, 889, 890, 891, 892, 893, 894, 895, 896, 897, 898, 999, 1000, 1001, 1002, 1003, 1004, 1005, 1006, 1007, 1008,
+  ]);
+  const isSpecialCard = (poke) => {
+    if (!poke) return false;
+    const statTotal = Array.isArray(poke.stats) ? poke.stats.reduce((sum, s) => sum + (s?.base_stat ?? 0), 0) : 0;
+    return SPECIAL_IDS.has(poke.id) || statTotal >= 600;
+  };
   const getCardPalette = (type) => {
     const map = {
       fire: { from: 'from-orange-500', to: 'to-red-600', ring: 'ring-orange-400' },
@@ -1330,9 +1383,10 @@ const BattlePage = () => {
       defense: getStatValue(poke, 'defense'),
       agility: getStatValue(poke, 'agility'),
     };
+    const special = isSpecialCard(poke);
     return (
         <div
-          className={`relative w-full max-w-[280px] mx-auto aspect-[3/4] rounded-2xl border-4 bg-gradient-to-b ${palette.from} ${palette.to} shadow-[0_10px_35px_rgba(0,0,0,0.35)] ring-4 ${palette.ring} overflow-hidden flex`}
+          className={`relative w-full max-w-[280px] mx-auto aspect-[3/4] rounded-2xl border-4 bg-gradient-to-b ${palette.from} ${palette.to} shadow-[0_10px_35px_rgba(0,0,0,0.35)] ring-4 ${palette.ring} overflow-hidden flex ${special ? 'ring-amber-300/80 shadow-[0_0_28px_rgba(255,193,7,0.45)]' : ''}`}
           style={{ backgroundImage: textureMap[primaryType] ?? textureMap.normal }}
         >
         <div
@@ -1344,10 +1398,8 @@ const BattlePage = () => {
         <div className="flex-1 pl-10 pr-3 py-3 flex flex-col gap-3">
           <div className="absolute right-2 top-2 text-xs font-bold tracking-wide opacity-80 drop-shadow-sm bg-black/30 text-white px-2 py-1 rounded">
             {emblemMap[primaryType] ?? 'STAR'}
-            <div className="flex flex-col items-end gap-1">
-              <div className="text-[10px] font-semibold text-white/80">Lv 100</div>
-            </div>
           </div>
+          {special && <div className="absolute inset-0 bg-white/10 pointer-events-none" />}
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               {sprite && (
@@ -1355,7 +1407,7 @@ const BattlePage = () => {
               )}
             </div>
           </div>
-          <div className="space-y-2 text-sm font-semibold mt-1 px-1">
+          <div className="space-y-2 text-sm font-semibold mt-1 px-2">
             {cardStatOptions.map((opt) => {
               const value = reveal || !hidden ? stats[opt.key] : '?';
               const color =
@@ -1373,7 +1425,7 @@ const BattlePage = () => {
                   key={opt.key}
                   className={`flex items-center justify-between rounded-lg px-3 py-2 border shadow-inner transition bg-gradient-to-r from-black/35 to-black/10 ${
                     isSelected ? 'border-white ring-2 ring-white/70 shadow-[0_0_20px_rgba(255,255,255,0.25)]' : 'border-white/10'
-                  } ${selectable ? 'cursor-pointer hover:from-black/45 hover:to-black/20' : ''}`}
+                  } ${selectable ? 'cursor-pointer hover:from-black/45 hover:to-black/20' : 'opacity-60'}`}
                   onClick={() => selectable && onSelectStat(opt.key)}
                 >
                   <span className={`${color} drop-shadow-sm uppercase`}>{opt.label.replace(' (HP)', '')}</span>
@@ -1408,9 +1460,13 @@ const BattlePage = () => {
           {!isInRoom && (
             <div className="flex flex-wrap justify-center gap-3 mb-8">
               <Button
-                variant={battleMode === 'pve' ? 'default' : 'outline'}
+                variant="outline"
                 onClick={() => setBattleMode('pve')}
-                className="gap-2"
+                className={`gap-2 border-sky-700 hover:border-sky-700 ${
+                  battleMode === 'pve'
+                    ? 'bg-sky-700 text-white hover:bg-sky-600 hover:text-white'
+                    : 'text-sky-800 hover:bg-sky-100 hover:text-sky-900'
+                }`}
               >
                 <Gamepad2 className="h-4 w-4" />
                 PC vs PC
@@ -1441,7 +1497,6 @@ const BattlePage = () => {
             {/* Left Pokemon */}
             <div className="space-y-3 md:space-y-4">
               <div className="flex items-center justify-center gap-2">
-                <h3 className="text-xl font-bold text-center">Pokemon 1</h3>
                 <button
                   type="button"
                   onClick={() => toggleStarter('left')}
@@ -1452,6 +1507,7 @@ const BattlePage = () => {
                 >
                   {startMode === 'left' && <span className="h-3 w-3 rounded-full bg-primary" />}
                 </button>
+                <h3 className="text-xl font-bold text-center">Pokemon 1</h3>
               </div>
 
               {!selectedLeft ? (
@@ -1501,7 +1557,6 @@ const BattlePage = () => {
             {/* Right Pokemon */}
             <div className="space-y-3 md:space-y-4">
               <div className="flex items-center justify-center gap-2">
-                <h3 className="text-xl font-bold text-center">Pokemon 2</h3>
                 <button
                   type="button"
                   onClick={() => toggleStarter('right')}
@@ -1512,6 +1567,7 @@ const BattlePage = () => {
                 >
                   {startMode === 'right' && <span className="h-3 w-3 rounded-full bg-primary" />}
                 </button>
+                <h3 className="text-xl font-bold text-center">Pokemon 2</h3>
               </div>
 
               {!selectedRight ? (
@@ -1676,7 +1732,9 @@ const BattlePage = () => {
                             : 'Opponent turn...'
                           : 'Ready to start the Ruby-style battle.'}
                       </div>
-                  {pveBattle?.active && !isPlayerTurn ? (
+                      {pveBattle?.active && autoSimPve ? (
+                        <h2 className="text-lg font-semibold px-2">Simulating moves automatically...</h2>
+                      ) : pveBattle?.active && !isPlayerTurn ? (
                         <h2 className="text-lg font-semibold px-2">Waiting for opponent...</h2>
                       ) : (
                         <div className="gba-menu-grid">
@@ -1851,8 +1909,8 @@ const BattlePage = () => {
                           : matchFinished
                           ? 'Match finished'
                           : isMyTurn
-                          ? 'Your turn to attack'
-                          : 'Opponent turn'}
+                          ? 'Your turn'
+                          : opponentName + '`s turn'}
                       </div>
                     </div>
                     <div className="flex gap-2">
@@ -1863,11 +1921,11 @@ const BattlePage = () => {
                         onClick={() => requestRematch()}
                         disabled={room?.rematchRequest?.status === 'pending'}
                       >
-                        <RefreshCw className="h-4 w-4" />
+                        <RefreshCw className="ml-1 h-4 w-4" />
                         {room?.rematchRequest?.status === 'pending' ? 'Waiting response' : 'Play Again'}
                       </Button>
                       <Button variant="ghost" size="sm" className="gap-2" onClick={leaveRoom}>
-                        <DoorOpen className="h-4 w-4" />
+                        <DoorOpen className="ml-1 h-4 w-4" />
                         Exit Session
                       </Button>
                     </div>
@@ -1925,52 +1983,66 @@ const BattlePage = () => {
 
                   {room?.gameMode === 'cards' ? (
                     <div className="space-y-4">
-                      <div className="flex flex-wrap items-center justify-between gap-3">
-                        <div className="flex flex-col sm:flex-row sm:items-center sm:gap-3">
-                          <div className="text-sm text-muted-foreground">Elma Chips Promo Cards - Best of {cardMaxRounds}</div>
-                          <div className="text-lg font-semibold">
-                            Round {Math.max(cardRound || 1, 1)} / {cardMaxRounds}
+                      {cardMatchWinner && (
+                        <div className="flex">
+                          <Badge className="w-fit bg-emerald-100 text-emerald-800 border-emerald-200">
+                            {cardMatchWinner === user?.uid ? `Match Winner: ${selfName}` : `Match Winner: ${opponentName}`}
+                          </Badge>
+                        </div>
+                      )}
+
+                      {room.adminUid === user?.uid && !cardMatchWinner && (
+                        <div className="flex flex-wrap gap-2 items-center">
+                          <Button
+                            className="gap-2"
+                            onClick={startCardRound}
+                            disabled={
+                              room.adminUid !== user?.uid ||
+                              cardMatchWinner ||
+                              (cardBattle?.hands && !cardRevealed)
+                            }
+                          >
+                            <Sparkles className="h-4 w-4" />
+                            {cardRound ? 'Next round' : 'Start match'}
+                          </Button>
+                          <Button
+                            variant="secondary"
+                            size="icon"
+                            className="ml-1 h-8 w-8 rounded-full bg-black text-white hover:bg-black/80"
+                            onClick={() =>
+                              alert('Admin deals a round. Chooser taps one attribute to reveal. Winner keeps choosing.')
+                            }
+                          >
+                            ?
+                          </Button>
+                        </div>
+                      )}
+
+                        <div className="rounded-2xl border bg-gradient-to-br from-slate-900/10 via-slate-800/5 to-slate-900/10 p-3 sm:p-4 space-y-4 shadow-[0_12px_40px_rgba(0,0,0,0.15)]">
+                          <div className="w-full max-w-2xl mx-auto text-white">
+                            <div className="flex items-stretch gap-0 text-sm sm:text-base">
+                              <div className="flex-1 flex items-center justify-center px-3 sm:px-3.5 py-1.5 rounded-l-full bg-gradient-to-r from-sky-700 to-sky-500 border border-sky-600 shadow-[0_6px_18px_rgba(0,0,0,0.3)]">
+                                <div className="flex flex-col items-center leading-tight">
+                                  <span className="font-semibold truncate text-sm sm:text-base">{(selfName?.split(' ')[0] || selfName || 'You').slice(0, 8)}</span>
+                                  <span className="text-[11px] text-slate-100/85">{chooserUid === user?.uid ? 'Choosing' : 'Waiting'}</span>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-3 px-2 sm:px-3 py-1 bg-slate-900 border border-slate-700 shadow-[0_6px_18px_rgba(0,0,0,0.3)] min-w-[150px] sm:min-w-[200px] justify-center">
+                                <span className="text-2xl font-extrabold text-sky-300 leading-none">{cardScores[user?.uid] ?? 0}</span>
+                                <div className="px-3 py-1 bg-slate-800 rounded-md text-center min-w-[78px]">
+                                  <div className="text-xs uppercase text-slate-200">Round</div>
+                                  <div className="text-base sm:text-lg font-bold">{Math.max(cardRound || 1, 1)} / {cardMaxRounds}</div>
+                                </div>
+                                <span className="text-2xl font-extrabold text-rose-200 leading-none">{cardScores[opponentId] ?? 0}</span>
+                              </div>
+                              <div className="flex-1 flex items-center justify-center px-3 sm:px-3.5 py-1.5 rounded-r-full bg-gradient-to-l from-rose-900 to-rose-700 border border-rose-700 shadow-[0_6px_18px_rgba(0,0,0,0.3)]">
+                                <div className="flex flex-col items-center leading-tight text-right">
+                                  <span className="font-semibold truncate text-sm sm:text-base">{(opponentName?.split(' ')[0] || opponentName || 'Opponent').slice(0, 8)}</span>
+                                  <span className="text-[11px] text-slate-100/85">{chooserUid === opponentId ? 'Choosing' : 'Waiting'}</span>
+                                </div>
+                              </div>
+                            </div>
                           </div>
-                        </div>
-                        <div className="flex items-center gap-2 text-sm sm:text-base">
-                          <Badge variant="secondary" className="bg-primary/10 text-primary border-primary/30 text-sm sm:text-base">
-                            {selfName}: {cardScores[user?.uid] ?? 0}
-                          </Badge>
-                          <Badge variant="outline" className="text-sm sm:text-base">
-                            {opponentName}: {cardScores[opponentId] ?? 0}
-                          </Badge>
-                          {cardMatchWinner && (
-                            <Badge className="bg-emerald-100 text-emerald-800 border-emerald-200">
-                              {cardMatchWinner === user?.uid ? 'Match Winner: You' : 'Match Winner: Opponent'}
-                            </Badge>
-                          )}
-                        </div>
-                      </div>
-
-                      <div className="flex flex-wrap gap-2 items-center">
-                        <Button
-                          className="gap-2"
-                          onClick={startCardRound}
-                          disabled={
-                            room.adminUid !== user?.uid ||
-                            cardMatchWinner ||
-                            (cardBattle?.hands && !cardRevealed)
-                          }
-                        >
-                          <Sparkles className="h-4 w-4" />
-                          {cardRound ? 'Next round' : 'Start match'}
-                        </Button>
-                        <span className="text-xs text-muted-foreground">
-                          Admin deals a round. Chooser taps one attribute to reveal. Winner keeps choosing.
-                        </span>
-                        <Badge variant="outline" className="ml-auto text-[11px]">
-                          {cardChooserName}
-                        </Badge>
-                      </div>
-
-                      <div className="rounded-2xl border bg-gradient-to-br from-slate-900/10 via-slate-800/5 to-slate-900/10 p-3 sm:p-4 space-y-4 shadow-[0_12px_40px_rgba(0,0,0,0.15)]">
-                        <div className="text-xs text-muted-foreground text-center sm:text-left">
-                          Opponent: {opponentName} · {chooserUid === opponentId ? 'Choosing' : 'Waiting'} · Card reveals in modal.
                         </div>
 
                         <div className="bg-muted/40 border rounded-xl p-3 space-y-3">
@@ -2034,10 +2106,6 @@ const BattlePage = () => {
                           Opponent card will reveal in the result modal.
                         </div>
                       </div>
-
-                                            {/* Round result handled via modal */}
-
-                    </div>
                   ) : room?.state === 'selecting' ? (
                     <div className="space-y-4">
                         <div className="flex flex-row items-center justify-between bg-muted/30 border rounded-xl p-3 md:p-4 gap-2 sm:gap-3">
@@ -2296,16 +2364,48 @@ const BattlePage = () => {
                 </div>
               ) : (
                 <div className="bg-card border rounded-xl p-6 text-center space-y-3">
-                  <div className="text-lg font-semibold">Find a challenger</div>
-                  <p className="text-muted-foreground text-sm">
-                    Click Player vs Player to open the online list and send an invite.
-                  </p>
-                  <div className="flex justify-center gap-2">
-                    <Button onClick={() => (user ? setShowPlayersModal(true) : setShowLoginGate(true))} className="gap-2">
-                      <Users className="h-4 w-4" />
-                      Open player list
-                    </Button>
-                  </div>
+                  {outgoingInvite ? (
+                    <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-left shadow-sm">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="space-y-1">
+                          <div className="text-sm font-semibold text-amber-900">
+                            Invite sent to {outgoingInvite.targetName ?? 'Player'}
+                          </div>
+                          <div className="text-xs text-amber-800">
+                            From {selfName}. Invite sent. Waiting for the other player to respond.
+                          </div>
+                          <div className="text-xs font-medium text-amber-900">
+                            Expires in {outgoingInviteSecondsLeft}s
+                          </div>
+                        </div>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={cancelOutgoingInvite}
+                          className="border-amber-300 text-amber-900 hover:bg-amber-100"
+                        >
+                          Cancel invite
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="text-lg font-semibold">Find a challenger</div>
+                      <p className="text-muted-foreground text-sm">
+                        Click Player vs Player to open the online list and send an invite.
+                      </p>
+                      <div className="flex justify-center gap-2">
+                        <Button
+                          variant="secondary"
+                          onClick={() => (user ? setShowPlayersModal(true) : setShowLoginGate(true))}
+                          className="gap-2 bg-slate-800 text-white hover:bg-slate-700 hover:text-white border border-slate-800 hover:border-slate-700"
+                        >
+                          <Users className="h-4 w-4" />
+                          Open player list
+                        </Button>
+                      </div>
+                    </>
+                  )}
                 </div>
               )}
             </div>
@@ -2363,9 +2463,12 @@ const BattlePage = () => {
                     </div>
                     <Button
                       size="sm"
-                      onClick={() => sendInvite(player)}
+                      onClick={() => {
+                        sendInvite(player);
+                        setShowPlayersModal(false);
+                      }}
                       disabled={outgoingInvite?.targetUid === player.uid}
-                      className="gap-1"
+                      className="gap-1 bg-slate-800 text-white hover:bg-slate-700 hover:text-white border border-slate-800 hover:border-slate-700"
                     >
                       {outgoingInvite?.targetUid === player.uid ? 'Invite sent' : 'Invite to battle'}
                     </Button>
