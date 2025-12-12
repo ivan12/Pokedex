@@ -1,60 +1,72 @@
 ﻿# Pokedex React
 
-Pokedex em React + Vite + Tailwind com filtros avancados, busca por imagem, modos de batalha PvE/PvP e cache em Firebase para carregamento rapido.
+Pokedex built with React + Vite + Tailwind, featuring advanced filters, image search, PvE/PvP battle modes, and Firebase caching for fast loading.
 
 ## Web
+
 <img width="1903" height="875" alt="image" src="https://github.com/user-attachments/assets/e9ff1b6b-ba0a-4f09-9c02-e26fbe0449f8" />
 
 ## Mobile
+
 <img width="383" height="851" alt="image" src="https://github.com/user-attachments/assets/7846f545-4420-44a4-b1f8-6e92ca9b03e1" />
 
-## Novidades do game
-- Busca por imagem: upload ou camera com TensorFlow/MobileNet e matching por similaridade; leva direto para o Pokemon encontrado.
-- Modo Batalha renovado: PvE rapido e PvP online com calculo de dano (tabela de tipos, STAB e bonus de clima) e log das jogadas.
-- PvP online: login Google, presenca em tempo real, lista de jogadores, convites, rematch, filtro por regiao para sorteio, e modos Classico ou Cartas (melhor de 3/5) com comparacao de atributos.
-- Cache da Pokedex no Firebase Realtime Database para carregar 1000+ Pokemon sem esperar a API a cada abertura.
-- Favoritos persistentes no navegador e sincronizados com a sua conta quando logado.
-- Tema claro/escuro e navegacao mobile fixa no rodape.
+## Game updates
 
-## Funcionalidades
-- Busca por nome, numero ou tipo; atalhos para favoritos ao digitar "fav" ou "lik".
-- Filtro por tipo e geracao com badges, mais paginacao (151 por pagina).
-- Busca por imagem com camera/upload (TensorFlow) integrada a navegacao.
-- Cards com estilo vitreos, icones de tipo e badges de geracao.
-- Pagina de detalhes com stats, habilidades e primeiros golpes.
-- Paginas de Tipos (com contagem + lendarios/miticos) e Regioes/Geracoes.
-- Favoritos com toggle no card (local + Firebase).
-- Tema claro/escuro lembrado no dispositivo.
+* Image search: upload or camera using TensorFlow/MobileNet with similarity matching; redirects directly to the found Pokémon.
+* Revamped Battle Mode: fast PvE and online PvP with damage calculation (type chart, STAB, and weather bonuses) and battle logs.
+* Online PvP: Google login, real-time presence, player list, invites, rematch, region-based matchmaking, and Classic or Card modes (best of 3/5) with stat comparison.
+* Pokedex cache in Firebase Realtime Database to load 1,000+ Pokémon without waiting for the API on every launch.
+* Persistent favorites stored locally and synced with your account when logged in.
+* Light/dark theme and fixed bottom navigation on mobile.
 
-## Requisitos
-- Node.js 18+
-- npm
+## Features
 
-## Instalacao
+* Search by name, number, or type; shortcuts to favorites by typing "fav" or "lik".
+* Filter by type and generation with badges, plus pagination (151 per page).
+* Image search with camera/upload (TensorFlow) integrated into navigation.
+* Glassmorphism-style cards with type icons and generation badges.
+* Detail page with stats, abilities, and initial moves.
+* Types pages (with counters + legendary/mythical) and Regions/Generations pages.
+* Favorites toggle on cards (local + Firebase).
+* Light/dark theme remembered on the device.
+
+## Requirements
+
+* Node.js 18+
+* npm
+
+## Installation
+
 ```bash
 npm install
 ```
 
-## Rodar em desenvolvimento
+## Run in development
+
 ```bash
 npm run dev
 ```
-Abra `http://localhost:5173`.
 
-## Build de producao
+Open `http://localhost:5173`.
+
+## Production build
+
 ```bash
 npm run build
 ```
 
-## Preview da build
+## Build preview
+
 ```bash
 npm run preview
 ```
 
-## Configurar o Firebase
-1) Crie um projeto no Firebase Console, adicione um app Web e copie as credenciais.
-2) Ative Authentication > Google e Realtime Database (modo Production; crie regras conforme sua necessidade).
-3) Substitua o objeto `firebaseConfig` em `src/lib/firebase.js` pelos dados do seu projeto:
+## Firebase setup
+
+1. Create a project in the Firebase Console, add a Web app, and copy the credentials.
+2. Enable Authentication > Google and Realtime Database (Production mode; create rules as needed).
+3. Replace the `firebaseConfig` object in `src/lib/firebase.js` with your project data:
+
 ```js
 const firebaseConfig = {
   apiKey: "...",
@@ -67,19 +79,23 @@ const firebaseConfig = {
   measurementId: "...",
 };
 ```
-4) Estruturas usadas no Realtime Database:
-   - `pokemon/` para cache da Pokedex.
-   - `favorites/{uid}` para favoritos sincronizados.
-   - `presence/`, `invites/` e `rooms/` para lobby e partidas PvP.
 
-## Estrutura
-- `src/components/` - Header, filtros, cards, busca por imagem etc.
-- `src/pages/` - Home, Types, Generations, Battle, Favorites, Detail.
-- `src/hooks/` - Autenticacao e store de favoritos.
-- `src/lib/` - Firebase e cache da Pokedex.
-- `public/` - Assets estaticos.
+4. Structures used in Realtime Database:
+
+   * `pokemon/` for Pokedex cache.
+   * `favorites/{uid}` for synced favorites.
+   * `presence/`, `invites/`, and `rooms/` for PvP lobby and matches.
+
+## Structure
+
+* `src/components/` - Header, filters, cards, image search, etc.
+* `src/pages/` - Home, Types, Generations, Battle, Favorites, Detail.
+* `src/hooks/` - Authentication and favorites store.
+* `src/lib/` - Firebase and Pokedex cache.
+* `public/` - Static assets.
 
 ## Scripts
-- `npm run dev` - Desenvolver.
-- `npm run build` - Build de producao.
-- `npm run preview` - Preview da build.
+
+* `npm run dev` - Development.
+* `npm run build` - Production build.
+* `npm run preview` - Build preview.
