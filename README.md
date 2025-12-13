@@ -4,11 +4,17 @@ Pokedex built with React + Vite + Tailwind, featuring advanced filters, image se
 
 ## Web
 
-<img width="1903" height="875" alt="image" src="https://github.com/user-attachments/assets/e9ff1b6b-ba0a-4f09-9c02-e26fbe0449f8" />
+<img width="1796" height="915" alt="image" src="https://github.com/user-attachments/assets/7efac2a1-0867-403f-a421-c6694bf1241b" />
+
 
 ## Mobile
 
-<img width="383" height="851" alt="image" src="https://github.com/user-attachments/assets/7846f545-4420-44a4-b1f8-6e92ca9b03e1" />
+<img width="351" height="730" alt="image" src="https://github.com/user-attachments/assets/ecba0a2a-ad23-4234-8a15-e67e5567d2ae" />
+<img width="351" height="728" alt="image" src="https://github.com/user-attachments/assets/b7e2812d-805c-4a00-81e8-5954263e99ca" />
+<img width="352" height="733" alt="image" src="https://github.com/user-attachments/assets/83d0cafd-6e5e-46e6-b129-433daab22994" />
+<img width="351" height="728" alt="image" src="https://github.com/user-attachments/assets/173fbea0-3296-4d71-99eb-3d94a40a37ca" />
+
+
 
 ## Game updates
 
