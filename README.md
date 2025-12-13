@@ -12,15 +12,18 @@ Pokedex built with React + Vite + Tailwind, featuring advanced filters, image se
 
 ## Game updates
 
-* Image search: upload or camera using TensorFlow/MobileNet with similarity matching; redirects directly to the found Pokémon.
-* Revamped Battle Mode: fast PvE and online PvP with damage calculation (type chart, STAB, and weather bonuses) and battle logs.
-* Online PvP: Google login, real-time presence, player list, invites, rematch, region-based matchmaking, and Classic or Card modes (best of 3/5) with stat comparison.
-* Pokedex cache in Firebase Realtime Database to load 1,000+ Pokémon without waiting for the API on every launch.
-* Persistent favorites stored locally and synced with your account when logged in.
-* Light/dark theme and fixed bottom navigation on mobile.
+* **Random Mode**: Discover random Pokémon with "Who's that Pokémon?" mystery mode, detailed card view with Emla Chips promo layout showing stats (Strength, Attack, Defense, Agility), and interactive reveal by clicking the silhouette.
+* **Mobile Optimizations**: Fully responsive Random Mode with dynamic height calculations, optimized spacing for mobile screens, and touch-friendly controls that respect the bottom navigation menu.
+* **Image search**: Upload or camera using TensorFlow/MobileNet with similarity matching; redirects directly to the found Pokémon.
+* **Revamped Battle Mode**: Fast PvE and online PvP with damage calculation (type chart, STAB, and weather bonuses) and battle logs.
+* **Online PvP**: Google login, real-time presence, player list, invites, rematch, region-based matchmaking, and Classic or Card modes (best of 3/5) with stat comparison.
+* **Pokedex cache** in Firebase Realtime Database to load 1,000+ Pokémon without waiting for the API on every launch.
+* **Persistent favorites** stored locally and synced with your account when logged in.
+* **Light/dark theme** and fixed bottom navigation on mobile.
 
 ## Features
 
+* **Random Mode**: Shuffle button to discover random Pokémon with mystery silhouette mode and detailed Emla Chips-style card back showing combat stats.
 * Search by name, number, or type; shortcuts to favorites by typing "fav" or "lik".
 * Filter by type and generation with badges, plus pagination (151 per page).
 * Image search with camera/upload (TensorFlow) integrated into navigation.
@@ -29,6 +32,7 @@ Pokedex built with React + Vite + Tailwind, featuring advanced filters, image se
 * Types pages (with counters + legendary/mythical) and Regions/Generations pages.
 * Favorites toggle on cards (local + Firebase).
 * Light/dark theme remembered on the device.
+* Fully responsive design optimized for mobile with touch-friendly controls.
 
 ## Requirements
 
